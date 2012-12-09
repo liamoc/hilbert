@@ -1,0 +1,18 @@
+    
+------- EMPTY
+   OK
+
+
+ ?p OK  ?q OK
+-------------- JUXT 
+   ?p?q OK
+
+
+     ?p OK
+-------------- PAREN
+    (?p) OK
+
+
+  ?q?p OK  ?p OK
+----------------- ELIM
+      ?q OK
