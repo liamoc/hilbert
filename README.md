@@ -9,7 +9,7 @@ Currently, the meta-logic is not even powerful enough to express full natural de
 
 This makes it ideal for exploring basic string judgements, but not much good for anything beyond that just yet.
 
-This version can be considered a prototype for the interface of the next version, Hilbert 2, which will include user-definable syntax for expressions, unification, and implications. It will still be a first-order logic though, so for induction I'll have to provide some built-in primitives.
+This version can be considered a prototype for the interface of the next version, Hilbert 2, which will include user-definable, tree-based syntax; unification (to allow free schematic variables and working in either direction); and implications (to allow more complicated logics). It will still be a first-order logic though, so for induction I'll have to provide some built-in primitives.
 
 This version has a few nice features though: It allows judgements to take any form, because everything is just strings internally, but this also means you have to proceed in a strictly bottom-up fashion, allowing no schematic variables to remain unresolved. 
 
@@ -31,9 +31,11 @@ Each of the files should contain a list of hilbert rules. An example bracket mat
  - 1 or more blank lines separate each rule
  - Rules are written as follows:
 
-       string schema
-    -------------------- NAME
-       string schema
+
+        string schema
+     -------------------- NAME
+        string schema
+
 
 Where string schema are any sequence of characters, which may contain variables, which are notated with `?x` (variable names must be one character long). For example, the unary natural numbers can be defined by:
 
