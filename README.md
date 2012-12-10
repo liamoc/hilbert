@@ -32,9 +32,9 @@ Each of the files should contain a list of hilbert rules. An example bracket mat
  - Rules are written as follows:
 
 
-        string schema
-     -------------------- NAME
-        string schema
+         string schema
+      -------------------- NAME
+         string schema
 
 
 Where string schema are any sequence of characters, which may contain variables, which are notated with `?x` (variable names must be one character long). For example, the unary natural numbers can be defined by:
