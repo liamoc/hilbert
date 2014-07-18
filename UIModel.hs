@@ -63,7 +63,7 @@ sentence (Selected p) = getSentence p
 sentence (Tentative _ p) = getSentence p
 
 rulemode :: [Rule] -> Model -> Model 
-rulemode rs (Selected p) = maybe Selected Tentative (toLZ $ mapMaybe (toLZ . flip rule p) (localRules p ++ rs)) p
+rulemode rs (Selected p) = maybe Selected Tentative (toLZ $ mapMaybe (toLZ . flip rule p) (localRules p ++ rs) ++ (mapMaybe (toLZ . return) (builtins p))) p
 rulemode _ x = x                      
 
 newModel :: Sentence -> Model

@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternGuards #-}
 {-# OPTIONS -fno-warn-name-shadowing #-}
 module Prover where
 
@@ -46,6 +47,14 @@ left x = x
 
 oops :: ProofTreeZipper -> ProofTreeZipper
 oops (PTZ fv ctx (PT sks lrs str _)) = PTZ fv ctx (PT sks lrs str Nothing)
+
+builtins :: ProofTreeZipper -> [ProofTreeZipper]
+builtins (PTZ fv ctx (PT _ _ str _)) = catMaybes [atom, inside]
+    where atom :: Maybe ProofTreeZipper 
+          atom | (List [Symbol _,Symbol "atom"]) <- str = Just (PTZ fv ctx (PT [] [] str (Just ("⟪ atom ⟫", []))))
+               | otherwise = Nothing
+          inside | (List [t,Symbol "in",List ls]) <- str, t `elem` ls = Just (PTZ fv ctx (PT [] [] str (Just ("⟪ in ⟫", []))))
+                 | otherwise = Nothing
 
 rule :: Rule -> ProofTreeZipper -> [ProofTreeZipper]
 rule r p@(PTZ fv ctx (PT sks lrs str _)) = mapMaybe (uncurry (applyRule p)) $ runRule r skols fv $ getSentence p
