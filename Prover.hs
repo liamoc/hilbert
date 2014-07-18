@@ -19,16 +19,7 @@ data ProofTreeZipper = PTZ [Variable] [ProofTreeContext] ProofTree
 
 {-
 
-  rule  = [x y. hypothesis* => sentence]
-        | [hypothesis* => sentence]
-        | [sentence]
-        | sentence
 
-
-  hypothesis = sentence
-             | [sentence]
-             | [x y. sentence]
-             | [x y. n: rule* => y  ]
 
 -}
 
@@ -37,7 +28,7 @@ newTree :: Sentence -> ProofTreeZipper
 newTree s = PTZ (freeVariables s) [] $ PT [] [] s Nothing  
 
 up :: ProofTreeZipper -> ProofTreeZipper
-up (PTZ fv (PTC (sks, lrs, str, name) l r :cs) pt) = PTZ fv cs (PT sks lrs str $ Just (name, l ++ (pt:r)))
+up (PTZ fv (PTC (sks, lrs, str, name) l r :cs) pt) = PTZ fv cs (PT sks lrs str $ Just (name, reverse l ++ (pt:r)))
 up x = x
 
 down :: ProofTreeZipper -> ProofTreeZipper

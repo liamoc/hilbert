@@ -52,7 +52,7 @@ viewZipper m (PTZ fv [] pt) = fst $ fst $ viewTree [] m pt
 viewZipper m (PTZ fv ctx p) = fst $ fst $ viewZipper' Normal ctx $ viewTree (concatMap skolemsC ctx) m p
   where viewZipper' m (PTC (sks, lrs, str, name) l r : ctx) acc 
            = let str' = viewSentence str
-                 [l', r'] = map (map (viewTree (concatMap skolemsC ctx ++ sks) m)) [l, r]
+                 [l', r'] = map (map (viewTree (concatMap skolemsC ctx ++ sks) m)) [reverse l, r]
                  ((cs,is), wf) = unzip *** and $ unzip $ l' ++ (acc:r')
              in viewZipper' m ctx ((ViewNode m str' ((if wf then Proven else Unproven) (toSubscript name) (mconcat is)) cs, I sks (map Rules.name lrs)), wf)
         viewZipper' _ [] acc = acc
