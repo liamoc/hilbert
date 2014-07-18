@@ -59,7 +59,3 @@ When hilbert opens, you will be prompted for a proof goal. This should be a conc
  - `x` - Exit
 
 Have fun!
-
-Disclaimer
-----------
-I'm aware this is painfully impractical at this point. Mostly it's a prototype for the UI, not the theorem prover. The actual theorem prover will be in version 2.
