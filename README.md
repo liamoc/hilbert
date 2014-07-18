@@ -5,13 +5,11 @@ Hilbert is a theorem prover designed for people who don't want to learn a theore
 
 It's designed to follow as closely as possible the standard natural deduction they do by hand, rather than introduce its own sophisticated meta-logic. It features a graphical interface that renders "proof trees" as stacked rules as is the notational convention, using unicode and `vty`. Proofs are represented as such trees. There is no tactic script.
 
-Currently, the meta-logic is not even powerful enough to express full natural deduction - specifically the notion of implication cannot be indirectly captured in the usual fashion. Instead, it's based entirely on string-based formal systems such as those found in GEB or similar. 
+This branch of hilbert has a very underpowered metalogic - specifically the notion of implication cannot be directly captured in the usual fashion. Instead, it's based entirely on string-based formal systems such as those found in GEB or similar. This makes it ideal for exploring basic string judgements, but not much good for anything beyond that.
 
-This makes it ideal for exploring basic string judgements, but not much good for anything beyond that just yet.
+A more sophisticated version, based on a first-order term language, is provided in the first-order branch, but it is not a replacement for this version. Systems such as MIU or parentheses matching are much more painful in the first-order version, as they must encode associative concatenation and lists of symbols explicitly. On the other hand, trying to use this version of Hilbert for specifying a logic would be nigh-on impossible.
 
-This version can be considered a prototype for the interface of the next version, Hilbert 2, which will include user-definable, tree-based syntax; unification (to allow free schematic variables and working in either direction); and implications (to allow more complicated logics). It will still be a first-order logic though, so for induction I'll have to provide some built-in primitives.
-
-This version has a few nice features though: It allows judgements to take any form, because everything is just strings internally, but this also means you have to proceed in a strictly bottom-up fashion, allowing no schematic variables to remain unresolved. 
+This version has a few nice features though: It allows judgements to take any form, because everything is just strings internally, but this also means you have to proceed in a strictly bottom-up fashion, allowing no schematic variables to remain unresolved.
 
 Building
 ========
