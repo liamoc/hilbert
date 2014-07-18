@@ -40,7 +40,7 @@ viewZipper m (PTZ [] pt) = fst $ viewTree m M.empty pt
 viewZipper m (PTZ ctx@(PTC (_, _, subst) _ _  :_) p) = fst $ viewZipper' Normal ctx $ viewTree m subst p
   where viewZipper' m (PTC (str, name, subst) l r : ctx) acc 
            = let str' = viewSentence (substOf ctx) str
-                 [l', r'] = map (map (viewTree m subst)) [l, r]
+                 [l', r'] = map (map (viewTree m subst)) [reverse l, r]
                  (cs, wf) = second and $ unzip $ l' ++ (acc:r')
              in viewZipper' m ctx (ViewNode m str' ((if wf then Proven else Unproven) name) cs, wf)
         viewZipper' _ [] acc = acc

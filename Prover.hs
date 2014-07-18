@@ -17,7 +17,7 @@ newTree :: Sentence -> ProofTreeZipper
 newTree s = PTZ [] $ PT s Nothing  
 
 up :: ProofTreeZipper -> ProofTreeZipper
-up (PTZ (PTC (str, name, subst) l r :cs) pt) = PTZ cs (PT str $ Just (name, subst, l ++ (pt:r)))
+up (PTZ (PTC (str, name, subst) l r :cs) pt) = PTZ cs (PT str $ Just (name, subst, reverse l ++ (pt:r)))
 up x = x
 
 down :: ProofTreeZipper -> ProofTreeZipper
