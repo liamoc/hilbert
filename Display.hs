@@ -18,6 +18,7 @@ data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , vincLeftAnnot :: ViewMode -> (Attr, String)
                       , vincRightAnnot :: ViewMode -> (Attr, String)
                       , bgAttr :: Attr
+                      , showSchematicDependencies :: Bool
                       }
 
 displayView :: DisplaySkin -> View -> Image
@@ -71,7 +72,9 @@ displayViewSchema' :: DisplaySkin -> ViewMode -> SentenceView -> Image
 displayViewSchema' sk@(DS {..}) m (ViewList ss) = string (sentenceAttr m) "(" 
                                               <|> displayViewSchema sk m (ViewList ss)
                                               <|> string (sentenceAttr m) ")"
-displayViewSchema' (DS {..}) m (ViewVariable s) = string (variableAttr m) s 
+displayViewSchema' (DS {..}) m (ViewVariable s ds) 
+    | showSchematicDependencies && not (null ds) = displayViewSchema' DS {showSchematicDependencies = False, ..} m (ViewList (ViewVariable s []: map ViewSkolem ds))
+    | otherwise =  string (variableAttr m) s 
 displayViewSchema' (DS {..}) m (ViewSkolem s) = string (skolemAttr m) s 
 displayViewSchema' (DS {..}) m (ViewSymbol s) = string (sentenceAttr m) s 
                                               

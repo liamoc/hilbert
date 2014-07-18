@@ -4,8 +4,11 @@ module Prover where
 import Data.Monoid
 import Rules
 import Control.Arrow(second)
+import Control.Applicative
 import Data.List
-
+import Data.Maybe
+import Data.Traversable
+import Prelude hiding (mapM)
 data ProofTree = PT [Variable] [Rule] Sentence (Maybe (RuleName, [ProofTree]))
 
 data ProofTreeContext = PTC ([Variable], [Rule], Sentence, RuleName) [ProofTree] [ProofTree] 
@@ -54,38 +57,44 @@ oops :: ProofTreeZipper -> ProofTreeZipper
 oops (PTZ fv ctx (PT sks lrs str _)) = PTZ fv ctx (PT sks lrs str Nothing)
 
 rule :: Rule -> ProofTreeZipper -> [ProofTreeZipper]
-rule r p@(PTZ fv ctx (PT sks lrs str _)) = map (uncurry (applyRule p)) $ runRule r skols fv $ getSentence p
-  where applyRule :: ProofTreeZipper -> [Rule] -> Substitution -> ProofTreeZipper
+rule r p@(PTZ fv ctx (PT sks lrs str _)) = mapMaybe (uncurry (applyRule p)) $ runRule r skols fv $ getSentence p
+  where applyRule :: ProofTreeZipper -> [Rule] -> Substitution -> Maybe ProofTreeZipper
         applyRule (PTZ fv ctx (PT sks lrs str _)) ps subst 
                 = applySubst subst (PTZ (fv ++ concatMap (freeVariablesRule skols) ps) ctx (PT sks lrs str premises))
-           where premises = Just (name r, map makePT ps)
+           where premises = Just (name r, map (makePT . skolemise (skols ++ fv)) ps)
                  makePT (Rule _ vs ps c) = PT vs (map (freshen allRuleNames) ps) c Nothing
         skols = allSkolems p
         allRuleNames = map name $ localRules p
         freshen banned v = v { name = head (dropWhile (`elem` banned) (map (name v ++) subscripts))}
         subscripts =  map show $ iterate (+1) 1
 
-  
-applySubst :: Substitution -> ProofTreeZipper -> ProofTreeZipper 
-applySubst u (PTZ fv ctx pt) = let 
-                                   fv'  = concatMap (freeVariables . lookupSubst s) fv
-                                   (s, ctx') = mapAccumR applySubstPTC u ctx
-                                   pt'  = applySubstPT s pt
-                                in PTZ fv' ctx' pt'
-   where applySubstPT :: Substitution -> ProofTree -> ProofTree 
-         applySubstPT u (PT vs lrs str ps) = let 
-                                   s    = ignoreSubst vs u
-                                   str' = substitute s str 
-                                   ps'  = fmap (second (map (applySubstPT s))) ps 
-                                   lrs' = map (substituteRule s) lrs
-                          in PT vs lrs' str' ps' 
-         applySubstPTC :: Substitution -> ProofTreeContext -> (Substitution, ProofTreeContext)
-         applySubstPTC u (PTC (vs,lrs,str,r) pts pts') =  let s = ignoreSubst vs u in
-                (s,PTC (vs,map (substituteRule s) lrs, substitute s str,r) (map (applySubstPT s) pts) (map (applySubstPT s) pts'))
+ 
+
+shittymapM :: (a -> Maybe b) -> (c,a) -> Maybe (c, b)
+shittymapM f (a,b) = (,) a <$> f b
+ 
+applySubst :: Substitution -> ProofTreeZipper -> Maybe ProofTreeZipper 
+applySubst s (PTZ fv ctx pt) = let fv'  = variableSetSubst s fv
+                                in do ctx' <- mapM (applySubstPTC s) ctx
+                                      pt'  <- applySubstPT s pt
+                                      return $ PTZ fv' ctx' pt'
+   where applySubstPT :: Substitution -> ProofTree -> Maybe ProofTree 
+         applySubstPT s (PT vs lrs str ps) = do
+                 str' <- substitute s str
+                 ps'  <- mapM (shittymapM (mapM (applySubstPT s))) ps 
+                 lrs' <- mapM (substituteRule s) lrs
+                 return $  PT vs lrs' str' ps' 
+         applySubstPTC :: Substitution -> ProofTreeContext -> Maybe ProofTreeContext
+         applySubstPTC s (PTC (vs,lrs,str,r) pts1 pts2) = do
+                 lrs' <- mapM (substituteRule s) lrs
+                 str' <- substitute s str 
+                 pts1' <- mapM (applySubstPT s) pts1
+                 pts2' <- mapM (applySubstPT s) pts2
+                 return (PTC (vs,lrs', str',r) pts1' pts2')
          
 
 addSubst :: Variable -> Term -> ProofTreeZipper -> ProofTreeZipper
-addSubst k v = applySubst (subst k v)
+addSubst k v z = case applySubst (subst k v) z of Just x -> x; _ -> z
 localRules :: ProofTreeZipper -> [Rule]
 localRules (PTZ fv ctx (PT sks lrs str _)) = concatMap localRulesC ctx ++ lrs
    where localRulesC (PTC (sks,lrs,_,_)_ _) = lrs

@@ -10,28 +10,34 @@ module Rules ( Rule (..)
              , substitute
              , freeVariables
              , subst
-             , lookupSubst
+             , getS
              , ignoreSubst
              , substituteRule
              , freeVariablesRule
+             , skolemise
+             , variableSetSubst
              ) where
 
 import           Data.Monoid
+import           Control.Arrow
+import           Control.Applicative
+import           Data.Maybe 
 
-data Term = Symbol String | Variable String | List [Term] deriving Show
+data Term = Symbol String | Skolem String | Variable String [String] | List [Term] 
+     deriving Show
 
 type RuleName = String
-newtype Substitution = S { lookupSubst :: Variable -> Term }
+data Substitution = S {getS :: [(Variable,Term)] }
 type SentenceSchema = Term
 type Sentence = Term
 type Variable = String
 
 instance Monoid Substitution where 
-  mempty = S Variable
-  mappend a (S b) = S (substitute a . b)
+  mappend (S d') s@(S d) = S (map (second (fromJust .  substitute s)) d' ++ d)
+  mempty = S [] 
 
 subst :: Variable -> Term -> Substitution 
-subst v t = S $ \x -> if x == v then t else Variable x 
+subst v t = S [(v,t)]
 
 
 data Rule = Rule { name       :: RuleName
@@ -41,49 +47,86 @@ data Rule = Rule { name       :: RuleName
                  } deriving Show
 
 -- First order unification as described by Robinson
-mgu :: [Variable] -> Term -> Term -> Maybe Substitution
-mgu _ (Variable v)  (Variable v') | v == v' = return mempty
-mgu _ (Symbol t)    (Symbol t')   | t == t' = return mempty
-mgu _ (List [])     (List [])               = return mempty
-mgu s (List (x:xs)) (List (y:ys))           = do sigma1 <- mgu s x y
-                                                 sigma2 <- mgu s (List (map (substitute sigma1) xs))
-                                                                 (List (map (substitute sigma1) ys))
-                                                 return (sigma1 <> sigma2)
-mgu s (Variable v) t 
-  | v `notElem` freeVariables t           
-  , v `notElem` s                         = return (subst v t)
-mgu s t (Variable v) 
-  | v `notElem` freeVariables t          
-  , v `notElem` s                         = return (subst v t)
-mgu _ _ _                                 = Nothing
+mgu :: Term -> Term -> Maybe Substitution
+mgu (Variable v _)  (Variable v' _) | v == v' = return mempty
+mgu (Symbol t)    (Symbol t')       | t == t' = return mempty
+mgu (Skolem t)    (Skolem t')       | t == t' = return mempty
+mgu (List [])     (List [])               = return mempty
+mgu (List (x:xs)) (List (y:ys))           = do sigma1 <- mgu  x y
+                                               xs' <- List <$> mapM (substitute sigma1) xs
+                                               ys' <- List <$> mapM (substitute sigma1) ys
+                                               sigma2 <- mgu xs' ys'
+                                               return (sigma1 <> sigma2)
+mgu (Variable v k) t 
+  | v `notElem` freeVariables t   
+  , all (`elem` k) (skolems t) 
+  = return (subst v t)
+mgu t (Variable v k) 
+  | v `notElem` freeVariables t   
+  , all (`elem` k) (skolems t)
+  = return (subst v t)
+mgu _ _                                 = Nothing
 
 runRule :: Rule -> [Variable] -> [Variable] -> Sentence -> [([Rule], Substitution)]
 runRule (Rule {..}) sks fv str = let fs = freshen schematics (fv ++ sks)
-                                     premises' = map (substituteRule fs) premises
-                                  in case mgu sks str (substitute fs conclusion)
-                                     of Nothing -> []
-                                        Just sigma -> [ (premises', sigma) ]
-        where freshen vars banned = mconcat $ map (\v -> subst v (Variable $ head $ dropWhile (`elem` banned) $ map (v ++) subscripts)) vars
-              subscripts =  map show $ iterate (+1) 1
+                                  in maybeToList $ do
+                                      sigma <- mgu str =<< substitute fs conclusion
+                                      premises' <- mapM (substituteRule fs) premises
+                                      return (premises', sigma)
 
-substituteRule :: Substitution -> Rule -> Rule 
+        where freshen vars banned = mconcat $ map (\v -> subst v (flip Variable sks $ freshenName banned v)) vars
+
+freshenName banned v = head $ dropWhile (`elem` banned) $ v : map (v ++) subscripts
+    where subscripts = map show $ iterate (+1) 1
+
+substituteRule :: Substitution -> Rule -> Maybe Rule 
 substituteRule subst (Rule n vs ps c) = let
     subst' = ignoreSubst vs subst
- in Rule n vs (map (substituteRule subst) ps) (substitute subst c)
+ in Rule n vs <$> mapM (substituteRule subst) ps <*> substitute subst c
 
 ignoreSubst :: [Variable] -> Substitution -> Substitution
-ignoreSubst vs subst = S $ \ v -> if v `elem` vs then Variable v
-                                                 else lookupSubst subst v 
+ignoreSubst vs subst = S (filter ((`notElem` vs) . fst) $ getS subst )
 
-substitute :: Substitution -> SentenceSchema -> SentenceSchema
-substitute _     (Symbol s)   = Symbol s
-substitute sigma (Variable v) = lookupSubst sigma v 
-substitute sigma (List terms) = List $ map (substitute sigma) terms
+skolems :: Term -> [Variable]
+skolems (Variable v vs) = []
+skolems (Skolem t) = [t]
+skolems (Symbol s) = []
+skolems (List ls) = ls >>= skolems
+
+
+skolemise :: [Variable] -> Rule -> Rule 
+skolemise banned (Rule {..}) = let renaming = map (id &&& freshenName banned) schematics
+                                in Rule { name = name
+                                        , schematics = schematics
+                                        , premises = map (renameRule renaming) premises
+                                        , conclusion = rename renaming conclusion 
+                                        }
+   where rename rs (Variable v vs) | Just x <- lookup v rs = Skolem x
+         rename rs (List ls) = List (map (rename rs) ls)
+         rename rs a = a
+         renameRule rn (Rule {..}) = Rule { name = name
+                                          , schematics = schematics
+                                          , premises = map (renameRule renaming') premises
+                                          , conclusion = rename renaming' conclusion
+                                          }
+           where renaming' = filter ((`notElem` schematics) . fst) rn
+
+substitute :: Substitution -> SentenceSchema -> Maybe SentenceSchema
+substitute sigma (Variable v vs) = case lookup v (getS sigma) of 
+                                     Just t -> if not (any (`notElem` vs) (skolems t)) 
+                                               then Just t else Nothing
+                                     Nothing -> Just ( Variable v vs)
+substitute sigma (List terms) = List <$> mapM (substitute sigma) terms
+substitute _     x            = Just x
 
 freeVariables :: Term -> [Variable]
-freeVariables (Variable s) = [s]
-freeVariables (Symbol _)   = []
+freeVariables (Variable s _) = [s]
 freeVariables (List t)     = t >>= freeVariables
+freeVariables _  = []
 
 freeVariablesRule :: [Variable] -> Rule -> [Variable]
 freeVariablesRule sks (Rule {..}) = filter (`notElem` (schematics ++ sks)) $ freeVariables conclusion ++ concatMap (freeVariablesRule sks) premises
+
+
+variableSetSubst :: Substitution -> [Variable] -> [Variable]
+variableSetSubst (S ss) vs = (freeVariables =<< map snd ss) ++ filter (`notElem` map fst ss) vs

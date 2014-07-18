@@ -42,6 +42,7 @@ defaultSkin = DS { titleAttr = titleFunc
                  , vinculumPadding = 0
                  , vinculumAttr   = defSentenceAttr
                  , vinculumChar   = vincOut
+                 , showSchematicDependencies = True
                  , premiseLeftAnnot = onlyInSelL' ( def_attr {attr_fore_color=SetTo bright_yellow} 
                                                   , leftArrow)
                  , premiseRightAnnot = onlyInSelR' ( def_attr {attr_fore_color=SetTo bright_yellow} 
@@ -112,7 +113,7 @@ main = do
     _ <- addToFocusGroup f1 t
     onActivate e $ \e' -> (T.unpack <$> getEditText e') >>= putMVar mv
                               >> setEditText e' (T.pack "")
-                              >> setText txt (T.pack "Hilbert 1.0")
+                              >> setText txt (T.pack "Hilbert 2.0")
                               >> focus t
     w' <- vBox txt e
     w  <- flip vBox w' =<< hBox b1 =<< hBox t b2

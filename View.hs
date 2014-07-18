@@ -7,7 +7,7 @@ import UIModel
 import Data.Char
 import Rules
 import Prover
-data ViewMode = Normal
+data ViewMode    = Normal
                  | Speculative
                  | Selection
                  | Selecting { isNextRule :: Bool
@@ -17,7 +17,7 @@ data ViewMode = Normal
                              }
 
 data SentenceView = ViewList [SentenceView]
-                  | ViewVariable String
+                  | ViewVariable String [String]
                   | ViewSkolem String
                   | ViewSymbol String
 
@@ -51,7 +51,7 @@ viewZipper :: ViewMode -> ProofTreeZipper -> View
 viewZipper m (PTZ fv [] pt) = fst $ fst $ viewTree [] m pt
 viewZipper m (PTZ fv ctx p) = fst $ fst $ viewZipper' Normal ctx $ viewTree (concatMap skolemsC ctx) m p
   where viewZipper' m (PTC (sks, lrs, str, name) l r : ctx) acc 
-           = let str' = viewSentence (concatMap skolemsC ctx ++ sks) str
+           = let str' = viewSentence str
                  [l', r'] = map (map (viewTree (concatMap skolemsC ctx ++ sks) m)) [l, r]
                  ((cs,is), wf) = unzip *** and $ unzip $ l' ++ (acc:r')
              in viewZipper' m ctx ((ViewNode m str' ((if wf then Proven else Unproven) (toSubscript name) (mconcat is)) cs, I sks (map Rules.name lrs)), wf)
@@ -68,14 +68,14 @@ viewTree sks m (PT vs lrs sent ms) = case ms of
        ((cs',is), wf) = unzip *** and $ unzip $ map (viewTree (sks ++ vs) (downwards m)) cs
      in ((ViewNode m sent' ((if wf then Proven else Unproven) (toSubscript r) (mconcat is)) cs',I vs (map Rules.name lrs)), wf)
     Nothing -> ((ViewNode m sent' NoRule [], I vs (map Rules.name lrs)), False)
-  where sent' = viewSentence (sks ++ vs) sent
+  where sent' = viewSentence sent
 
 
-viewSentence :: [Variable] -> SentenceSchema -> SentenceView
-viewSentence sks (List x)   = ViewList (map (viewSentence sks) x)
-viewSentence sks (Symbol q) = ViewSymbol (toSubscript q)
-viewSentence sks (Variable v)  | v `elem` sks = ViewSkolem (toSubscript v)
-                               | otherwise    = ViewVariable (toSubscript v)
+viewSentence :: SentenceSchema -> SentenceView
+viewSentence (List x)   = ViewList (map viewSentence x)
+viewSentence (Symbol q) = ViewSymbol (toSubscript q)
+viewSentence (Variable v vs) = ViewVariable (toSubscript v) (map toSubscript vs)
+viewSentence (Skolem v ) = ViewSkolem (toSubscript v)
 
 toSubscript :: String -> String 
 toSubscript p@(x:_) | isDigit x = p

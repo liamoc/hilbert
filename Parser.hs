@@ -18,7 +18,7 @@ T.TokenParser {..} = T.makeTokenParser (haskellStyle { T.reservedOpNames = ["?",
 type Parser a = Parsec String () a
 
 term :: Parser Term
-term =  Variable <$> variable 
+term =  flip Variable [] <$> variable 
     <|> Symbol   <$> identifier  
     <|> Symbol   <$> operator
     <|> List     <$> parens (many term)
