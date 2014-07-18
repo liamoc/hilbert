@@ -1,5 +1,5 @@
 name:                hilbert
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            A graphical, beginner's theorem prover for Haskell based on natural deduction
 description:         Please see the README available on GitHub for detailed information.
 homepage:            http://github.com/liamoc/hilbert
