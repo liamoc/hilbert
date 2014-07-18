@@ -25,7 +25,7 @@ import           Data.Maybe
 import           Data.List
 
 data Term = Symbol String | Skolem String | Variable String [String] | List [Term] 
-     deriving Show
+     deriving (Show, Eq)
 
 type RuleName = String
 data Substitution = S {getS :: [(Variable,Term)] } deriving Show
