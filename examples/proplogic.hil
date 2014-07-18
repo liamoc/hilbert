@@ -1,58 +1,61 @@
-axiom [CONJII ?A ?B:
-  [:  ?A ]
-  [:  ?B ]
-  ==> ?A /\ ?B
-]
+axiom 
+  ?A   ?B 
+  ----------- CONJI
+  ?A /\ ?B 
 
-axiom [CONJE1 ?A ?B:
-  [: ?A /\ ?B ]
-  ==> ?A
-]
 
-axiom [CONJE2 ?A ?B:
-  [: ?A /\ ?B ]
-  ==> ?B
-]
+axiom 
+  (?A /\ ?B)   (* parens are needed for premises *)
+  ---------- CONJE1
+  ?A
 
-axiom [DISJI1 ?A ?B:
-  [:  ?A ]
-  ==> ?A \/ ?B
-]
+axiom 
+  (?A /\ ?B) 
+  ---------- CONJE2
+  ?B
 
-axiom [DISJI2 ?A ?B:
-  [:  ?B ]
-  ==> ?A \/ ?B
-]
+axiom
+  ?A 
+  ---------- DISJI1
+  ?A \/ ?B
 
-axiom [DISJE ?A ?B ?C:
-  [:  ?A \/ ?B]
-  [:  [: ?A ] ==> ?C]
-  [:  [: ?B ] ==> ?C]
-  ==> ?C
-]
+axiom
+  ?B 
+  ---------- DISJI2
+  ?A \/ ?B
 
-axiom [IMPI ?A ?B:
-  [: [: ?A ] ==> ?B ]
-  ==> ?A -> ?B
-]
+axiom
+  (?A \/ ?B)
+  [: [A: ?A] ==> ?C]
+  [: [B: ?B] ==> ?C]
+  ------------- DISJE
+  ?C
 
-axiom [IMPE ?A ?B:
-  [: ?A -> ?B ]
-  [: ?A ]
-  ==> ?B
-]
+axiom 
+  [: ?A ==> ?B ]
+  -------------- IMPI
+  ?A -> ?B
 
-axiom [NEGI ?A:
-  [?B : [: ?A ] ==> ?B ]
-  ==> not ?A
-]
+axiom 
+  (?A -> ?B)  ?A 
+  -------------- IMPE
+  ?B
 
-axiom [NEGE ?A ?B:
-  [: not ?A]
-  [: ?A]
-  ==> ?B
-]
+axiom 
+  [?B : ?A ==> ?B ]
+  ----------------- NEGI
+  not ?A
 
-axiom [TRUEI : True ]
+axiom
+  (not ?A)  ?A
+  ------------ NEGE
+  ?B
 
-axiom [FALSEE ?A : [: False ] ==> ?A]
+axiom
+   ---- TRUEI
+   True
+
+axiom 
+   False
+   ----- FALSEE
+   ?A

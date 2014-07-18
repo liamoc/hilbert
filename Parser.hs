@@ -8,35 +8,50 @@ import qualified Text.Parsec.Token as T
 import Data.Maybe 
 import Control.Monad
 
-T.TokenParser {..} = T.makeTokenParser (haskellStyle { T.reservedOpNames = ["?", "]"]
-                                                     , T.reservedNames = []
+T.TokenParser {..} = T.makeTokenParser (haskellStyle { T.reservedOpNames = ["?", "==>", "axiom"]
+                                                     , T.reservedNames = ["axiom"]
                                                      , T.opStart = opLetters
                                                      , T.opLetter = opLetters
+                                                     , T.commentLine = ""
+                                                     , T.commentStart = "(*"
+                                                     , T.commentEnd = "*)"
+                                                     , T.nestedComments = True
                                                      })
-       where opLetters = oneOf "~!@#$%^&*_+{}|:\"<>?`,./;'[]\\-="
+       where opLetters = oneOf "~!@$%^&*_+{}|:\"<>`,./;'\\-=" <|> T.identLetter haskellStyle 
 
 type Parser a = Parsec String () a
 
 term :: Parser Term
 term =  flip Variable [] <$> variable 
-    <|> Symbol   <$> identifier  
-    <|> Symbol   <$> operator
+    <|> Symbol   <$> try (operator >>= notHyphenString)
     <|> List     <$> parens (many term)
+  where notHyphenString xs | any (not . (== '-')) xs = return xs
+        notHyphenString xs | length xs < 3 = return xs
+        notHyphenString _ = fail "hyphen string!"
+
+hyphenString = do x <- operator
+                  unless (all (== '-') x && length x >= 3) $ fail "not hyphen string!"
 
 variable :: Parser Variable
-variable = reservedOp "?" *> identifier
+variable = symbol "?" *> identifier
 
 rule :: Parser Rule
 rule = brackets (Rule . (fromMaybe "") <$> optionMaybe identifier <*> many variable <* symbol ":" <*> premises <*> (handle1 <$> many term) )
- where  premises = many rule <* symbol "==>" <|> pure []
+    <|> single <$> term
+ where  premises = try (many rule <* reservedOp "==>") <|> pure []
+        single = Rule "" [] [] 
 
 handle1 [x] = x
 handle1 xs  = List xs
 
 definition :: Parser Rule
-definition =  do x <- symbol "axiom" *> rule
-                 when (name x == "") $ fail "Need to provide a name for top-level rule" 
-                 return x
+definition =  do x <- whiteSpace >> symbol "axiom" 
+                 premises <- many rule
+                 hyphenString
+                 name <- identifier 
+                 conc <- (handle1 <$> many term)
+                 let r = Rule name [] premises conc
+                 return $ Rule name (freeVariablesRule [] r) premises conc
 
 parse :: FilePath -> IO (Maybe [Rule])
 parse path = do 
