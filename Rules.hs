@@ -1,5 +1,6 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards, PatternGuards #-}
 module Rules ( Rule (..)
+             , Term (..)
              , RuleName 
              , Substitution
              , SentenceSchema
@@ -8,64 +9,81 @@ module Rules ( Rule (..)
              , runRule
              , substitute
              , freeVariables
+             , subst
+             , lookupSubst
+             , ignoreSubst
+             , substituteRule
+             , freeVariablesRule
              ) where
 
-import qualified Data.Map                       as M
-import           Data.Maybe
+import           Data.Monoid
+
+data Term = Symbol String | Variable String | List [Term] deriving Show
 
 type RuleName = String
-type Substitution = M.Map Variable String
-type SentenceSchema = String
-type Sentence = String
-type Variable = Char
+newtype Substitution = S { lookupSubst :: Variable -> Term }
+type SentenceSchema = Term
+type Sentence = Term
+type Variable = String
+
+instance Monoid Substitution where 
+  mempty = S Variable
+  mappend a (S b) = S (substitute a . b)
+
+subst :: Variable -> Term -> Substitution 
+subst v t = S $ \x -> if x == v then t else Variable x 
+
 
 data Rule = Rule { name       :: RuleName
-                 , premises   :: [SentenceSchema]
+                 , schematics :: [Variable]
+                 , premises   :: [Rule]
                  , conclusion :: SentenceSchema
                  } deriving Show
 
-data SchemaMatcher = Running SentenceSchema Substitution deriving Show
+-- First order unification as described by Robinson
+mgu :: [Variable] -> Term -> Term -> Maybe Substitution
+mgu _ (Variable v)  (Variable v') | v == v' = return mempty
+mgu _ (Symbol t)    (Symbol t')   | t == t' = return mempty
+mgu _ (List [])     (List [])               = return mempty
+mgu s (List (x:xs)) (List (y:ys))           = do sigma1 <- mgu s x y
+                                                 sigma2 <- mgu s (List (map (substitute sigma1) xs))
+                                                                 (List (map (substitute sigma1) ys))
+                                                 return (sigma1 <> sigma2)
+mgu s (Variable v) t 
+  | v `notElem` freeVariables t           
+  , v `notElem` s                         = return (subst v t)
+mgu s t (Variable v) 
+  | v `notElem` freeVariables t          
+  , v `notElem` s                         = return (subst v t)
+mgu _ _ _                                 = Nothing
 
-schemaToMachine :: SentenceSchema -> SchemaMatcher
-schemaToMachine = flip Running M.empty
+runRule :: Rule -> [Variable] -> [Variable] -> Sentence -> [([Rule], Substitution)]
+runRule (Rule {..}) sks fv str = let fs = freshen schematics (fv ++ sks)
+                                     premises' = map (substituteRule fs) premises
+                                  in case mgu sks str (substitute fs conclusion)
+                                     of Nothing -> []
+                                        Just sigma -> [ (premises', sigma) ]
+        where freshen vars banned = mconcat $ map (\v -> subst v (Variable $ head $ dropWhile (`elem` banned) $ map (v ++) subscripts)) vars
+              subscripts =  map show $ iterate (+1) 1
 
-delta :: Char -> SchemaMatcher -> [Maybe SchemaMatcher]
-delta c (Running s@('?':n:r) theta) = let 
-       sigma1 = (M.insertWith (flip (++)) n [c] theta )
-       sigma2 = M.alter (Just . fromMaybe "") n theta
-    in (Just $ Running s sigma1) : delta c (Running (substitute' n (sigma2 M.! n) r) sigma2)
-  where substitute' k v ('?':n':ns) | k == n' = v ++ substitute' k v ns
-                                    | k /= n' = '?':n':substitute' k v ns
-        substitute' k v (n':ns) = n':substitute' k v ns
-        substitute' _ _ []      = []
-delta c (Running (x:xs) m) | x /= c = [Nothing]
-                           | x == c = [Just $ Running xs m]
-delta _ (Running _ _) = [Nothing]
+substituteRule :: Substitution -> Rule -> Rule 
+substituteRule subst (Rule n vs ps c) = let
+    subst' = ignoreSubst vs subst
+ in Rule n vs (map (substituteRule subst) ps) (substitute subst c)
 
-runString :: Sentence -> SchemaMatcher -> [Substitution]
-runString [] (Running l m) | allGlobs l = [blankGlobs m l]
-  where allGlobs ('?':_:r) = allGlobs r
-        allGlobs []        = True
-        allGlobs  _        = False
-        blankGlobs acc ('?':x:r) = blankGlobs (M.alter (Just . fromMaybe "") x acc) r
-        blankGlobs acc _         = acc
-runString [] _               = []
-runString (x:xs) m = concatMap (runString xs) (catMaybes $ delta x m)
-
-runRule :: Rule -> Sentence -> [[SentenceSchema]]
-runRule (Rule {..}) str = case runString (unwords $ words str) (schemaToMachine conclusion)
-                            of [] -> []
-                               list -> map (\m -> map (substitute m) premises) list
+ignoreSubst :: [Variable] -> Substitution -> Substitution
+ignoreSubst vs subst = S $ \ v -> if v `elem` vs then Variable v
+                                                 else lookupSubst subst v 
 
 substitute :: Substitution -> SentenceSchema -> SentenceSchema
-substitute m ('?':n:r) = case M.lookup n m
-                                  of Just x  -> x ++ substitute m r
-                                     Nothing -> '?':n:substitute m r
-substitute m (x:xs)    = x:substitute m xs
-substitute _ []        = []
+substitute _     (Symbol s)   = Symbol s
+substitute sigma (Variable v) = lookupSubst sigma v 
+substitute sigma (List terms) = List $ map (substitute sigma) terms
 
+freeVariables :: Term -> [Variable]
+freeVariables (Variable s) = [s]
+freeVariables (Symbol _)   = []
+freeVariables (List t)     = t >>= freeVariables
 
-freeVariables :: SentenceSchema -> [Variable]
-freeVariables ('?':x:xs) = x : freeVariables xs
-freeVariables (_:xs)     = freeVariables xs
-freeVariables []         = []
+freeVariablesRule :: [Variable] -> Rule -> [Variable]
+freeVariablesRule sks (Rule {..}) = filter (`notElem` (schematics ++ sks)) $ freeVariables conclusion ++ concatMap (freeVariablesRule sks) premises

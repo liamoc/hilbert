@@ -1,0 +1,23 @@
+axiom [ZPN ?n : zero + ?n = ?n ]
+
+axiom [SPS ?n ?m ?o :
+    [: ?n + ?m = ?o]
+==> (suc ?n) + ?m = (suc ?o)
+]
+
+axiom [IMPI ?p ?q :
+    [: [: ?p] ==> ?q ]
+==> ?p -> ?q
+]
+
+axiom [BOTE ?c :
+   [: False] ==> ?c
+]
+
+axiom [NEGI ?a:
+    [?d: [: ?a] ==> ?d]
+==> not ?a]
+
+axiom [NEGTRANS ?a ?b ?c :
+    [first : ?a -> ?b] [second : ?b -> ?c]
+==> ?a -> ?c]

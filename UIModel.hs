@@ -26,7 +26,10 @@ toLZ (x:xs) = Just $ ZZ [] x xs
 
 data Model = Selected ProofTreeZipper
            | Tentative (ListZipper (ListZipper ProofTreeZipper)) ProofTreeZipper
-           deriving (Show)
+     
+instance Show Model where 
+  show _ = "get fucked vty"
+
 next :: Model -> Model
 next (Selected p) = Selected $ right p
 next (Tentative p o) = Tentative (rightLZ p) o
@@ -60,12 +63,12 @@ sentence (Selected p) = getSentence p
 sentence (Tentative _ p) = getSentence p
 
 rulemode :: [Rule] -> Model -> Model 
-rulemode rs (Selected p) = maybe Selected Tentative (toLZ $ mapMaybe (toLZ . flip rule p) rs) p
+rulemode rs (Selected p) = maybe Selected Tentative (toLZ $ mapMaybe (toLZ . flip rule p) (rs ++ localRules p)) p
 rulemode _ x = x                      
 
 newModel :: Sentence -> Model
 newModel = Selected . newTree
 
-subst :: Variable -> String -> Model -> Model
+subst :: Variable -> Term -> Model -> Model
 subst v s (Selected p) = Selected $ addSubst v s p
 subst _ _ x = x

@@ -1,43 +1,50 @@
-
+{-# LANGUAGE RecordWildCards #-}
 module Parser where
 import Rules
-import Data.Char
-import Data.List.Split
-import Data.List
-import Data.Maybe
-import Control.Applicative
+import Control.Applicative hiding ((<|>), many)
+import Text.Parsec as P
+import Text.Parsec.Language
+import qualified Text.Parsec.Token as T
+import Data.Maybe 
+import Control.Monad
+
+T.TokenParser {..} = T.makeTokenParser (haskellStyle { T.reservedOpNames = ["?", "]"]
+                                                     , T.reservedNames = []
+                                                     , T.opStart = opLetters
+                                                     , T.opLetter = opLetters
+                                                     })
+       where opLetters = oneOf "~!@#$%^&*_+{}|:\"<>?`,./;'[]\\-="
+
+type Parser a = Parsec String () a
+
+term :: Parser Term
+term =  Variable <$> variable 
+    <|> Symbol   <$> identifier  
+    <|> Symbol   <$> operator
+    <|> List     <$> parens (many term)
+
+variable :: Parser Variable
+variable = reservedOp "?" *> identifier
+
+rule :: Parser Rule
+rule = brackets (Rule . (fromMaybe "") <$> optionMaybe identifier <*> many variable <* symbol ":" <*> premises <*> (handle1 <$> many term) )
+ where  premises = many rule <* symbol "==>" <|> pure []
+
+handle1 [x] = x
+handle1 xs  = List xs
+
+definition :: Parser Rule
+definition =  do x <- symbol "axiom" *> rule
+                 when (name x == "") $ fail "Need to provide a name for top-level rule" 
+                 return x
 
 parse :: FilePath -> IO (Maybe [Rule])
 parse path = do 
-    strs <- zip [1..] . map stripComments . lines <$> readFile path
-    x <- mapM parseRule $ filter (not . null) $ splitWhen (all isSpace . snd) strs
-    return $ if not (any (any isNothing) x) then Just $ concatMap catMaybes x
-                                            else Nothing
-  where stripComments = takeWhile (/= '#')
+    input <- P.parse (many definition <* eof) path <$> readFile path
+    case input of Right rs -> return (Just rs) 
+                  Left e -> print e >> return Nothing 
 
-parseRule :: [(Int, String)] -> IO [Maybe Rule]
-parseRule input = let
-     isVinculum = ("--" `isPrefixOf`) . dropWhile isSpace 
-  in case split (keepDelimsL $ whenElt (isVinculum . snd)) input of
-       [topLine,[vinc,bottomLine]] -> let
-            tops = filter (any (not . isSpace)) 
-                 $ concatMap (splitOn "  ") 
-                 $ map snd topLine
-            bot = unwords . words $ snd bottomLine
-            nam = dropWhile (== '-') $ dropWhile isSpace $ snd vinc
-         in if nam == "" then do 
-              putStrLn $ "No name given after vinculum on line " ++ show (fst vinc)
-              return [Nothing]
-            else return [Just $ Rule (unwords $ words nam) (map (unwords . words) tops) bot]
-       [one] -> do 
-         putStrLn $ "No vinculum found for rule on line " ++ show (fst $ head one)
-         return [Nothing]
-       [one,_] -> do 
-         putStrLn $ "Multiple lines found in conclusion of rule on line " ++ show (fst $ head one)
-         return [Nothing]
-       [] -> do 
-         putStrLn "Unexpected error"
-         return [Nothing]
-       one:_:_ -> do 
-         putStrLn $ "Multiple vinculi found for rule on line " ++ show (fst $ head one)
-         return [Nothing]
+parseTerm :: String -> Maybe Term
+parseTerm s = case P.parse (handle1 <$> many term <* eof) "" s of
+    Right t -> Just t 
+    Left  _ -> Nothing 

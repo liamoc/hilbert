@@ -34,8 +34,10 @@ rightArrow = "→"
 defaultSkin :: DisplaySkin
 defaultSkin = DS { titleAttr = titleFunc
                  , sentenceAttr  = defSentenceAttr
-                 , substitutionAttr = \x -> (defSentenceAttr x) { attr_style = SetTo bold }
-                 , variableAttr = const $ Attr (SetTo bold) (SetTo bright_red) Default
+                 , variableAttr = const $ Attr (SetTo bold) (SetTo bright_green) Default
+                 , skolemAttr = const $ Attr Default (SetTo bright_magenta) Default
+                 , skolemIntroAttr = const $ Attr Default (SetTo bright_magenta) Default
+                 , ruleIntroAttr = const $ Attr Default (SetTo bright_blue) Default
                  , separatePremises = EmptyImage 
                  , vinculumPadding = 0
                  , vinculumAttr   = defSentenceAttr
@@ -65,8 +67,8 @@ defaultSkin = DS { titleAttr = titleFunc
         onlyInSelR' _ _ = (def_attr, "")
         titleFunc _ (Selecting {}) = Attr (SetTo reverse_video) (SetTo bright_green) Default
         titleFunc _ (Selection   ) = Attr (SetTo reverse_video) (SetTo bright_yellow) Default
-        titleFunc True _ = Attr Default (SetTo bright_blue) Default 
-        titleFunc False _ = Attr Default (SetTo bright_red) Default  
+        titleFunc True _ = Attr (SetTo bold) (SetTo bright_blue) Default 
+        titleFunc False _ = Attr (SetTo bold) (SetTo bright_red) Default  
 
 defaultKeyBindings :: KeyBindings
 defaultKeyBindings = [(KASCII 'x', ArbitraryIO shutdownUi)
@@ -120,7 +122,9 @@ main = do
     setBoxChildSizePolicy w $ PerChild BoxAuto $ BoxFixed 2
     _ <- addToCollection c w f1
     _ <- forkIO $ do goal <- takeMVar mv
-                     schedule $ updateWidgetState t $ const $ newModel goal
+                     case parseTerm goal of 
+                          Just goal -> schedule $ updateWidgetState t $ const $ newModel goal
+                          Nothing   -> return ()
     runUi c $ defaultContext {skin = (skin defaultContext) { skinVertical = ' ' }
                              ,normalAttr = def_attr }
 

@@ -3,11 +3,12 @@ module Display where
 import View
 import Graphics.Vty
 import Data.List 
-
 data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , sentenceAttr :: ViewMode -> Attr
-                      , substitutionAttr :: ViewMode -> Attr
+                      , skolemAttr :: ViewMode -> Attr
                       , variableAttr :: ViewMode -> Attr
+                      , skolemIntroAttr :: ViewMode -> Attr
+                      , ruleIntroAttr :: ViewMode -> Attr
                       , separatePremises :: Image 
                       , vinculumPadding :: Int
                       , vinculumAttr   :: ViewMode -> Attr
@@ -59,18 +60,21 @@ vertCatMid = vert_cat . uniform'
 
 displayViewTitle :: DisplaySkin -> RuleTitle -> ViewMode -> Image
 displayViewTitle _ NoRule _ = empty_image
-displayViewTitle (DS {..}) (Proven s) m = string (titleAttr True m)  s
-displayViewTitle (DS {..}) (Unproven s) m = string (titleAttr False m) s
+displayViewTitle (DS {..}) (Proven s (I sk rs)) m = string (titleAttr True m)  s <|> string (sentenceAttr m) " " <|> horiz_cat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m)) sk ++ map (string (ruleIntroAttr m)) rs) 
+displayViewTitle (DS {..}) (Unproven s (I sk rs)) m = string (titleAttr False m) s <|> string (sentenceAttr m) " " <|> horiz_cat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m)) sk ++ map (string (ruleIntroAttr m)) rs) 
 
 
-displayViewSchema :: DisplaySkin -> ViewMode -> [SentenceSchemaToken] -> Image
-displayViewSchema _ _ [] = empty_image
-displayViewSchema sk@(DS {..}) m (TextChunk s : rest) = string (sentenceAttr m) s 
-                                                    <|> displayViewSchema sk m rest
-displayViewSchema sk@(DS {..}) m (Substitution s : rest) = string (substitutionAttr m) s 
-                                                    <|> displayViewSchema sk m rest
-displayViewSchema sk@(DS {..}) m (Variable s : rest) = char (variableAttr m) s 
-                                                    <|> displayViewSchema sk m rest
+displayViewSchema :: DisplaySkin -> ViewMode -> SentenceView -> Image
+displayViewSchema sk@(DS {..}) m (ViewList ss) = horiz_cat (intersperse (string (sentenceAttr m) " ") $ map (displayViewSchema' sk m) ss) 
+displayViewSchema sk n v = displayViewSchema' sk n v
+displayViewSchema' :: DisplaySkin -> ViewMode -> SentenceView -> Image
+displayViewSchema' sk@(DS {..}) m (ViewList ss) = string (sentenceAttr m) "(" 
+                                              <|> displayViewSchema sk m (ViewList ss)
+                                              <|> string (sentenceAttr m) ")"
+displayViewSchema' (DS {..}) m (ViewVariable s) = string (variableAttr m) s 
+displayViewSchema' (DS {..}) m (ViewSkolem s) = string (skolemAttr m) s 
+displayViewSchema' (DS {..}) m (ViewSymbol s) = string (sentenceAttr m) s 
+                                              
 
 invisibleQ :: Image
 invisibleQ = char (def_attr {attr_style = SetTo 0x80}) ' '

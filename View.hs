@@ -1,10 +1,10 @@
 {-# OPTIONS -fno-warn-name-shadowing #-}
-{-# LANGUAGE BangPatterns, PatternGuards #-}
 module View where
 
 import Control.Arrow
-import qualified Data.Map as M
+import Data.Monoid
 import UIModel
+import Data.Char
 import Rules
 import Prover
 data ViewMode = Normal
@@ -16,15 +16,24 @@ data ViewMode = Normal
                              , isPrevAssign :: Bool
                              }
 
-data SentenceSchemaToken = TextChunk String
-                         | Variable Char
-                         | Substitution String
+data SentenceView = ViewList [SentenceView]
+                  | ViewVariable String
+                  | ViewSkolem String
+                  | ViewSymbol String
 
-data RuleTitle = Proven String
-               | Unproven String
+data RuleTitle = Proven String Intros
+               | Unproven String Intros
                | NoRule
 
-data View = ViewNode ViewMode [SentenceSchemaToken] RuleTitle [View]
+
+data Intros = I [Variable] [RuleName]
+
+
+instance Monoid Intros where 
+  mempty = I [] []
+  mappend (I a b) (I c d) = I (a ++ c) (b ++ d)
+
+data View = ViewNode ViewMode SentenceView RuleTitle [View]
 
 
 viewModel :: Model -> View
@@ -35,39 +44,52 @@ viewModel (Tentative (ZZ l (ZZ ul m ur) r) _) = viewZipper (Selecting (not $ nul
                                                                       (not $ null ul)
                                                            ) m
 
+
+
+
 viewZipper :: ViewMode -> ProofTreeZipper -> View
-viewZipper m (PTZ [] pt) = fst $ viewTree m M.empty pt
-viewZipper m (PTZ ctx@(PTC (_, _, subst) _ _  :_) p) = fst $ viewZipper' Normal ctx $ viewTree m subst p
-  where viewZipper' m (PTC (str, name, subst) l r : ctx) acc 
-           = let str' = viewSentence (substOf ctx) str
-                 [l', r'] = map (map (viewTree m subst)) [l, r]
-                 (cs, wf) = second and $ unzip $ l' ++ (acc:r')
-             in viewZipper' m ctx (ViewNode m str' ((if wf then Proven else Unproven) name) cs, wf)
+viewZipper m (PTZ fv [] pt) = fst $ fst $ viewTree [] m pt
+viewZipper m (PTZ fv ctx p) = fst $ fst $ viewZipper' Normal ctx $ viewTree (concatMap skolemsC ctx) m p
+  where viewZipper' m (PTC (sks, lrs, str, name) l r : ctx) acc 
+           = let str' = viewSentence (concatMap skolemsC ctx ++ sks) str
+                 [l', r'] = map (map (viewTree (concatMap skolemsC ctx ++ sks) m)) [l, r]
+                 ((cs,is), wf) = unzip *** and $ unzip $ l' ++ (acc:r')
+             in viewZipper' m ctx ((ViewNode m str' ((if wf then Proven else Unproven) (toSubscript name) (mconcat is)) cs, I sks (map Rules.name lrs)), wf)
         viewZipper' _ [] acc = acc
-        substOf [] = M.empty
-        substOf (PTC (_,_, s) _ _:_) = s
 
 downwards :: ViewMode -> ViewMode
 downwards Speculative = Speculative
 downwards (Selecting {}) = Speculative
 downwards _ = Normal
 
-viewTree :: ViewMode -> Substitution -> ProofTree -> (View, Bool)
-viewTree m subst (PT sent ms) = case ms of 
-    Just (r, subst', cs) -> let
-       (cs', wf) = second and $ unzip $ map (viewTree (downwards m) subst') cs
-     in (ViewNode m sent' ((if wf then Proven else Unproven) r) cs', wf)
-    Nothing -> (ViewNode m sent' NoRule [], False)
-  where sent' = viewSentence subst sent
+viewTree :: [Variable] -> ViewMode -> ProofTree -> ((View, Intros), Bool)
+viewTree sks m (PT vs lrs sent ms) = case ms of 
+    Just (r, cs) -> let
+       ((cs',is), wf) = unzip *** and $ unzip $ map (viewTree (sks ++ vs) (downwards m)) cs
+     in ((ViewNode m sent' ((if wf then Proven else Unproven) (toSubscript r) (mconcat is)) cs',I vs (map Rules.name lrs)), wf)
+    Nothing -> ((ViewNode m sent' NoRule [], I vs (map Rules.name lrs)), False)
+  where sent' = viewSentence (sks ++ vs) sent
 
-viewSentence :: Substitution -> SentenceSchema -> [SentenceSchemaToken]
-viewSentence subst = viewSentence' [] where         
-  viewSentence' [] [] = []
-  viewSentence' (!acc) [] = [TextChunk $ reverse acc]
-  viewSentence' (!acc) ('?':v:r) | Just v' <- M.lookup v subst = TextChunk (reverse acc)
-                                                               : Substitution v' 
-                                                               : viewSentence' [] r
-                                 | otherwise = TextChunk (reverse acc)
-                                             : Variable v
-                                             : viewSentence' [] r
-  viewSentence' (!acc) (x:xs) = viewSentence' (x:acc) xs  
+
+viewSentence :: [Variable] -> SentenceSchema -> SentenceView
+viewSentence sks (List x)   = ViewList (map (viewSentence sks) x)
+viewSentence sks (Symbol q) = ViewSymbol (toSubscript q)
+viewSentence sks (Variable v)  | v `elem` sks = ViewSkolem (toSubscript v)
+                               | otherwise    = ViewVariable (toSubscript v)
+
+toSubscript :: String -> String 
+toSubscript p@(x:_) | isDigit x = p
+toSubscript k = map sub k
+    where
+          sub '0' = '₀'
+          sub '1' = '₁'
+          sub '2' = '₂'
+          sub '3' = '₃'  
+          sub '4' = '₄'
+          sub '5' = '₅'
+          sub '6' = '₆'
+          sub '7' = '₇'
+          sub '8' = '₈'
+          sub '9' = '₉'
+          sub x   = x
+     

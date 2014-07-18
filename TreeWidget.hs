@@ -12,10 +12,11 @@ import Control.Applicative hiding ((<|>))
 import Data.List(nub)
 import Data.Maybe
 import UIModel
-import Rules
+import Rules hiding (subst)
 import Display
 import View
 import Prover
+import Parser
 data KeyAction = ArbitraryIO (IO ())
                | MoveForward
                | MoveBack
@@ -52,17 +53,18 @@ keyActionToIO _ c (SubstituteVars) r = do (st, st') <- (     allFreeVariables
                                               handleVarSubst $ nub st'
                                             else handleVarSubst $ nub st
   where
-    handleVarSubst (x:xs) = do mv <- c $ "Enter assignment for: " ++ [x]
-                               _ <- forkIO $ do v <- takeMVar mv
-                                                schedule $ updateWidgetState r $ subst x v
-                                                handleVarSubst xs
+    handleVarSubst (x:xs) = do mv <- c $ "Enter assignment for: " ++ x
+                               _ <- forkIO $ do maybev <- takeMVar mv
+                                                case parseTerm maybev of 
+                                                  Just v -> do schedule $ updateWidgetState r $ subst x v
+                                                               handleVarSubst xs
+                                                  Nothing -> return ()
                                return ()
     handleVarSubst [] = return ()
-    allFreeVariables (Selected ( PTZ _ (PT _ (Just (_, s, cs))))) = concatMap freeVariables (map (substitute s . getSchema) cs)
-           where getSchema (PT x _) = x
+    allFreeVariables (Selected ( PTZ fv _ _)) = fv 
     allFreeVariables _ = []
 proofTreeWidget :: [Rule] -> InputCallback -> DisplaySkin -> KeyBindings -> IO (Widget Model)
-proofTreeWidget rules callback sk binds = newWidget (newModel "") $ \w ->
+proofTreeWidget rules callback sk binds = newWidget (newModel (List [])) $ \w ->
       w { render_ = \ref h _ ->  toImage sk ref h 
         , keyEventHandler = \ ref k _ -> case lookup k binds of
                                            Just x  -> keyActionToIO rules callback x ref 
