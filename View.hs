@@ -66,8 +66,8 @@ viewTree :: [Variable] -> ViewMode -> ProofTree -> ((View, Intros), Bool)
 viewTree sks m (PT vs lrs sent ms) = case ms of 
     Just (r, cs) -> let
        ((cs',is), wf) = unzip *** and $ unzip $ map (viewTree (sks ++ vs) (downwards m)) cs
-     in ((ViewNode m sent' ((if wf then Proven else Unproven) (toSubscript r) (mconcat is)) cs',I vs (map Rules.name lrs)), wf)
-    Nothing -> ((ViewNode m sent' NoRule [], I vs (map Rules.name lrs)), False)
+     in ((ViewNode m sent' ((if wf then Proven else Unproven) (toSubscript r) (mconcat is)) cs',I vs (map (toSubscript . Rules.name) lrs)), wf)
+    Nothing -> ((ViewNode m sent' NoRule [], I vs (map (toSubscript . Rules.name) lrs)), False)
   where sent' = viewSentence sent
 
 
