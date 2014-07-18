@@ -22,12 +22,13 @@ import           Data.Monoid
 import           Control.Arrow
 import           Control.Applicative
 import           Data.Maybe 
+import           Data.List
 
 data Term = Symbol String | Skolem String | Variable String [String] | List [Term] 
      deriving Show
 
 type RuleName = String
-data Substitution = S {getS :: [(Variable,Term)] }
+data Substitution = S {getS :: [(Variable,Term)] } deriving Show
 type SentenceSchema = Term
 type Sentence = Term
 type Variable = String
@@ -74,7 +75,9 @@ runRule (Rule {..}) sks fv str = let fs = freshen schematics (fv ++ sks)
                                       premises' <- mapM (substituteRule fs) premises
                                       return (premises', sigma)
 
-        where freshen vars banned = mconcat $ map (\v -> subst v (flip Variable sks $ freshenName banned v)) vars
+        where freshen vars banned = mconcat $ snd $ mapAccumR forEachName banned vars
+              forEachName banned v = let n = freshenName banned v
+                                      in (n:banned , subst v (Variable n sks))
 
 freshenName banned v = head $ dropWhile (`elem` banned) $ v : map (v ++) subscripts
     where subscripts = map show $ iterate (+1) 1
