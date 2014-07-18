@@ -128,7 +128,7 @@ freeVariables (List t)     = t >>= freeVariables
 freeVariables _  = []
 
 freeVariablesRule :: [Variable] -> Rule -> [Variable]
-freeVariablesRule sks (Rule {..}) = filter (`notElem` (schematics ++ sks)) $ freeVariables conclusion ++ concatMap (freeVariablesRule sks) premises
+freeVariablesRule sks (Rule {..}) = filter (`notElem` (schematics ++ sks)) $ freeVariables conclusion ++ concatMap (freeVariablesRule (schematics ++ sks)) premises
 
 
 variableSetSubst :: Substitution -> [Variable] -> [Variable]
