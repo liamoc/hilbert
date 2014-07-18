@@ -1,0 +1,58 @@
+axiom [CONJII ?A ?B:
+  [:  ?A ]
+  [:  ?B ]
+  ==> ?A /\ ?B
+]
+
+axiom [CONJE1 ?A ?B:
+  [: ?A /\ ?B ]
+  ==> ?A
+]
+
+axiom [CONJE2 ?A ?B:
+  [: ?A /\ ?B ]
+  ==> ?B
+]
+
+axiom [DISJI1 ?A ?B:
+  [:  ?A ]
+  ==> ?A \/ ?B
+]
+
+axiom [DISJI2 ?A ?B:
+  [:  ?B ]
+  ==> ?A \/ ?B
+]
+
+axiom [DISJE ?A ?B ?C:
+  [:  ?A \/ ?B]
+  [:  [: ?A ] ==> ?C]
+  [:  [: ?B ] ==> ?C]
+  ==> ?C
+]
+
+axiom [IMPI ?A ?B:
+  [: [: ?A ] ==> ?B ]
+  ==> ?A -> ?B
+]
+
+axiom [IMPE ?A ?B:
+  [: ?A -> ?B ]
+  [: ?A ]
+  ==> ?B
+]
+
+axiom [NEGI ?A:
+  [?B : [: ?A ] ==> ?B ]
+  ==> not ?A
+]
+
+axiom [NEGE ?A ?B:
+  [: not ?A]
+  [: ?A]
+  ==> ?B
+]
+
+axiom [TRUEI : True ]
+
+axiom [FALSEE ?A : [: False ] ==> ?A]
