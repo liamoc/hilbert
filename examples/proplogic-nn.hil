@@ -1,6 +1,6 @@
 axiom
   ?A   ?B
-  -------- CONJI
+  --------- CONJI
   ?A /\ ?B
 
 
@@ -39,16 +39,6 @@ axiom
 axiom
   (?A -> ?B)  ?A
   -------------- IMPE
-  ?B
-
-axiom
-  [?B : ?A ==> ?B ]
-  ----------------- NEGI
-  not ?A
-
-axiom
-  (not ?A)  ?A
-  ------------ NEGE
   ?B
 
 axiom

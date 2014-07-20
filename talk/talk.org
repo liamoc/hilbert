@@ -1,0 +1,436 @@
+#+Title: Hilbert
+ Two graphical theorem provers
+#+Author: Liam O'Connor
+ /CSE@UNSW/ and /NICTA/
+#+Email: liamoc@cse.unsw.edu.au
+
+ [[./talk_files/Hilbert.jpg]] [[./talk_files/Gentzen.jpg]]
+
+#+STARTUP: overview latexpreview indent hidestars inlineimages
+#+REVEAL_ROOT: http://cdn.jsdelivr.net/reveal.js/2.5.0/
+#+DESCRIPTION: 
+#+KEYWORDS: 
+#+LANGUAGE:  en
+#+OPTIONS:   H:1 num:nil toc:nil \n:nil @:t ::t |:t ^:t -:t f:t *:t <:t
+#+OPTIONS:   TeX:t LaTeX:t skip:nil d:nil todo:t pri:nil tags:not-in-toc
+#+INFOJS_OPT: view:nil toc:nil ltoc:t mouse:underline buttons:0 path:http://orgmode.org/org-info.js
+#+EXPORT_SELECT_TAGS: export
+#+HTML_HEAD:<style>html { font-family: Helvetica, sans-serif; font-size:  12pt; }</style>
+#+EXPORT_EXCLUDE_TAGS: noexport
+#+LINK_UP:   
+#+LINK_HOME:
+#+startup: beamer
+#+LaTeX_CLASS: beamer
+#+LaTeX_CLASS_OPTIONS: [bigger]
+#+LaTeX_HEADER: \usepackage{newunicodechar}
+#+LaTeX_HEADER: \newunicodechar{∈}{\ensuremath{\in}}
+#+LaTeX_HEADER: \newunicodechar{∀}{\ensuremath{\forall}}
+#+LaTeX_HEADER: \newunicodechar{⊎}{\ensuremath{\uplus}}
+#+LaTeX_HEADER: \newunicodechar{∷}{\ensuremath{::}}
+#+LaTeX_HEADER: \newunicodechar{₁}{\ensuremath{_{1}}}
+#+LaTeX_HEADER: \newunicodechar{₂}{\ensuremath{_{2}}}
+#+OPTIONS: tex:dvipng
+* Benjamin Pierce                                                     :slide:
+
+[[./talk_files/benpierce.jpg]] [[./talk_files/sf-thumb.png]]
+
+/\lambda, the ultimate TA: Using a proof assistant to teach programming language
+foundations/ 
+~14th ICFP (2009)~
+
+* I don't believe him                                                 :slide:
+#+begin_src coq
+
+Lemma fold_right_app : forall z a (xs : list A),
+            fold_right f z (xs ++ a :: nil) = f a (fold_right f z xs).
+  induction xs.
+  trivial.
+  simpl.
+  rewrite -> IHxs.
+  rewrite -> f_assoc.
+  rewrite -> f_assoc.
+  assert (f a0 a = f a a0).
+  apply f_comm.
+  rewrite -> H.
+  trivial.
+Qed.
+
+#+end_src
+
+* But that's just tactics                                             :slide:
+#+begin_src haskell
+∈-++ : ∀{A : Set}{a b : List A}{x} 
+     → x ∈ a ++ b 
+     → x ∈ a ⊎ x ∈ b
+∈-++ {a = []} p = inj₂ p
+∈-++ {a = x ∷ xs} (here p) = inj₁ (here p)
+∈-++ {a = x ∷ xs} (there p) with ∈-++ {a = xs} p
+... | inj₁ q = inj₁ (there q)
+... | inj₂ q = inj₂ q
+#+end_src
+
+* Our COMP3161/COMP9161 Syllabus                                      :slide:
+
+- *Natural Deduction and Rule Induction*
+- Syntax 
+- Static Semantics
+- Operational Semantics
+- Imperative semantics and axiomatic semantics
+- Abstract Machines
+- Exceptions, effects and continuations
+- Datatypes 
+- Parametric Polymorphism (and Theorems for Free)
+- Subtyping 
+- Ad-hoc polymorphism
+- Concurrency and Parallelism
+- /Existential types and abstraction/
+- /Dependent types and proofs of programs./
+- /Linear types, region types and resource control/
+
+* We don't want to be dominated by tools                              :slide:
+
+** COMP4161 Advanced Verification
+#+BEGIN_QUOTE
+  Oh, that's the Isabelle Course
+#+END_QUOTE  
+** COMP2911 Engineering Design
+#+BEGIN_QUOTE
+  Oh, that's the Java Course
+#+END_QUOTE  
+** COMP3141 Property-Based Software Development
+#+BEGIN_QUOTE
+  Oh, that's the Haskell Course
+#+END_QUOTE  
+** COMP3171 Object-Oriented Programming
+#+BEGIN_QUOTE
+  Oh, that's the C++ Course
+#+END_QUOTE  
+
+* My idea                                                             :slide:
+
+** Leave the syllabus unchanged
+** Introduce tools only if they have minimal pedagogical overhead.
+
+Sadly, no such tools exist. Let's make one!
+
+* The first thing we do                                               :slide:
+
+\begin{equation}
+\dfrac{}{\epsilon\ \textsf{M}} \quad \dfrac{a\ \textsf{M} \quad b\ \textsf{M}}{ab\ \textsf{M}} \quad \dfrac{a\ \textsf{M}}{\texttt{(}a\texttt{)}\ \textsf{M}}
+\end{equation}
+
+*** TODO DEMO HERE \smiley
+
+Observe that these rules are syntactically ambiguous
+
+* How it works                                                        :slide:
+
+#+BEGIN_SRC haskell
+  type Term = String -- yes, I'm serious
+#+END_SRC 
+
+** Using well-known string-matching techniques!
+DFAs, Data.List, and Haskell hacking
+
+And a /zipper/ to represent tree state.
+
+* A later thing we do                                                 :slide:
+
+\begin{equation}
+\dfrac{}{\textbf{Z} + x = x}\quad\dfrac{a + b = c}{\textbf{S}\ a + b = \textbf{S}\ c}
+\end{equation}
+
+Used to demonstrate /syntax directed/ rules that describe an /algorithm/.
+
+*Common technique*: Make the RHS "unknown" and fill it in as we go.
+
+** Problem: Requires unification, not pattern matching
+
+* Unification                                                         :slide:
+
+~unify~ (t_1, t_2) = ( /a substitution \theta such that/ \theta(t_1) \equiv \theta(t_2) )
+
+** We want the most general unifier, if it exists.
+
+For strings with variable interpolation, I have NFI how to do this or if it's even possible.
+
+*** Google suggests this problem is undecidable, and I believe it
+
+**** More on this later
+
+* Next idea                                                           :slide:
+
+Let's use a more /structured/ term language. 
+
+~Schemers rejoice, I chose sexps!~
+
+#+BEGIN_SRC haskell
+  data Term = List [Term]
+            | Atom String
+            | Schematic VarName
+#+END_SRC
+
+*** TODO DEMO HERE \smiley
+
+Another advantage (..?) : No such thing as syntactic ambiguity
+
+* Unification                                                         :slide:
+
+Unification for simple tree structures (like sexps) is decidable!
+
+#+BEGIN_SRC haskell
+mgu :: Term -> Term -> Maybe Substitution
+mgu (Schematic v) (Schematic v') | v == v' = return mempty
+mgu (Atom t)      (Atom t')      | t == t' = return mempty
+mgu (List [])     (List [])                = return mempty
+mgu (List (x:xs)) (List (y:ys))  = do sigma1 <- x `mgu` y
+                                      sigma2 <- map (substitute sigma1) xs 
+                                          `mgu` map (substitute sigma1) ys
+                                      return $ sigma1 <> sigma2
+mgu (Schematic v) t 
+  | v `notElem` freeVariables t  = return $ subst v t
+mgu t (Schematic v)
+  | v `notElem` freeVariables t  = return $ subst v t
+mgu _ _                          = Nothing
+#+END_SRC
+
+It is the /most general/ unifier too!
+
+* Alright, how about this:                                            :slide:
+
+
+\begin{equation} 
+\dfrac{a : \tau_1 \rightarrow \tau_2 \quad b : \tau_1}{a\ b : \tau_2}\quad
+\dfrac{{\begin{array}{c} x : \tau_1 \\ \vdots \\ e : \tau_2 \end{array}}}{\lambda x .\ e : \tau_1 \rightarrow \tau_2}
+\end{equation}
+
+Just need to change our definition of a rule a bit. Now, rules can have rules
+as premises:
+
+#+BEGIN_SRC haskell
+data Rule = Rule { name :: String
+                 , premises :: [Rule] -- previously was [Term]
+                 , conclusion :: Term
+                 }
+#+END_SRC
+
+*** TODO DEMO HERE \smiley
+
+* We can even do propositional logic!                                 :slide:
+
+*** TODO DEMO HERE \smiley
+
+Don't use negation for now
+
+* Dealing with negation                                               :slide:
+
+\begin{equation}
+  \dfrac{{\begin{array}{c} A \\ \vdots \\ P\end{array}}}{\neg A}{\scriptsize \textsc{NegI}^P}
+\end{equation} 
+What's this? 
+
+* They're variables, but not as we know it, Jim                       :slide:
+
+These variables are /skolem/. We can't substitute them for anything when unifying.
+Worse: *Skolems are local, schematics are global*
+
+We need to refine our rule definition from:
+#+BEGIN_SRC haskell
+data Rule = Rule { name :: String
+                 , premises :: [Rule] -- from these
+                 , conclusion :: Term -- we can show this
+                 }
+#+END_SRC 
+To:
+#+BEGIN_SRC haskell
+data Rule = Rule { name :: String
+                 , variables :: [VarName] -- For any substitution of 
+                                          -- these (meta-)variables
+                 , premises :: [Rule] -- From these
+                 , conclusion :: Term -- we can show this
+                 }
+
+negI = Rule { name = "NegI", variables = ["A"]
+            , premises = [Rule "" ["P"] [Rule "" [] (Skolem "A")] (Skolem "P")]
+            , conclusion = List [Atom "\neg", Skolem "A"]
+            }
+#+END_SRC 
+
+* The new procedure for rule application                              :slide:
+ - Pull out the rule from the environment.
+ - /Replace/ each of the rule's (toplevel) variables with fresh schematics.
+ - Attempt unification with the conclusion.
+ - If unification succeeds, apply substitution to conclusion and premises.
+ - Each new subgoal is the conclusion of one of the premises, with all variables
+   replaced with local skolems.
+#+BEGIN_SRC haskell 
+  data Term = List [Term]
+            | Atom String
+            | Schematic VarName
+            | Skolem VarName
+
+negI = Rule { name = "NegI", variables = ["A"]
+            , premises = [Rule "" ["P"] [Rule "" [] (Skolem "A")] (Skolem "P")]
+            , conclusion = List [Atom "\neg", Skolem "A"]
+            }
+#+END_SRC
+
+* This has a nasty bug                                                :slide:
+
+** ?a \rightarrow not A
+
+ Unify global schematic ~?a~ with local skolem (~P~) arising from the ~not~!
+ 
+*** Solution: Schematics carry around the skolems they "know"!
+#+BEGIN_SRC haskell 
+  data Term = List [Term]
+            | Atom String
+            | Schematic VarName [VarName]
+            | Skolem VarName
+#+END_SRC
+When we replace a rule's variables with fresh schematics, those schematics
+"know" every skolem in scope in the current point of the proof.
+
+* Restrict unification                                                :slide:
+
+** We can now only unify a schematic with a term if the skolems in that term are all "known" to the schematic:
+#+BEGIN_SRC haskell
+mgu :: Term -> Term -> Maybe Substitution
+mgu (Schematic v _)  (Schematic v' _) | v == v' = return mempty
+mgu (Atom t)         (Atom t')        | t == t' = return mempty
+mgu (Skolem t)       (Skolem t')      | t == t' = return mempty
+mgu (List [])        (List [])                  = return mempty
+mgu (List (x:xs))    (List (y:ys))    
+  = do sigma1 <- mgu  x y
+       sigma2 <- map (substitute sigma1) xs 
+           `mgu` map (substitute sigma1) ys
+       return $ sigma1 <> sigma2
+mgu (Schematic v sk) t
+  | v `notElem` freeVariables t
+  , all (`elem` sk) (skolems t)
+  = return $ subst v t
+mgu t (Schematic v sk)
+  | v `notElem` freeVariables t
+  , all (`elem` sk) (skolems t)
+  = return $ subst v t
+mgu _ _  = Nothing
+#+END_SRC
+
+* What's next?                                                        :slide:
+
+Encode first order logic? \sad 
+
+\begin{equation}
+  \dfrac{[\alpha/x] P}{\forall x.\ P}{\scriptsize \textsc{AllI}^\alpha}
+\end{equation}
+
+That innocuous-looking [\alpha/x] is /capture avoiding substitution/. For that, we
+need to know:
+
+- What /variables/ are in the object language, so we can /substitute/.
+- What /binders/ are in the object language, so we can avoid /capture/.
+
+* But wait..                                                          :slide:
+ We already have a great theory of variables and binders: the \lambda calculus!
+
+** Encode substitution as function application:
+
+\begin{equation}
+\dfrac{P\ \alpha}{\mathtt{ALL}\ P}{\scriptsize \textsc{AllI}^\alpha}
+\end{equation}
+
+ ~Higher Order Abstract Syntax!~
+
+This was _why_ \lambda calculus was invented! 
+(*it was not for* the entscheidungsproblem)
+
+[[./talk_files/Alonzo_Church.jpg]] "~I tried reading Hilbert ... hard reading.~"
+
+* Equational Axiomatisation                                           :slide:
+
+Equality in \lambda is *not* identity. We ignore:
+
+** Choice of variable names (\alpha-equivalence)
+#+BEGIN_QUOTE
+    (\lambda x. x) \equiv_\alpha (\lambda y. y)
+#+END_QUOTE
+
+** \beta-reduction, i.e evaluation:
+#+BEGIN_QUOTE
+    (\lambda x. t) u \equiv_\beta [u/x]t 
+#+END_QUOTE
+
+** \eta-expansion, i.e extensionality
+#+BEGIN_QUOTE
+   t \equiv_\eta (\lambda x. t x) 
+#+END_QUOTE
+
+* Problem #1: Kleene-Rosser (also Curry)                              :slide:
+
+This monstrosity:
+#+BEGIN_QUOTE
+  Y = \lambda f. (\lambda x. f (x x)) (\lambda x. f (x x))
+#+END_QUOTE
+Has an unusual property:
+#+BEGIN_QUOTE
+  Y f \equiv_\alpha\beta\eta f (Y f)
+#+END_QUOTE
+Let ~f~ be, say, ~\neg~, then we have:
+#+BEGIN_QUOTE
+  Y \neg \equiv_\alpha\beta\eta \neg (Y \neg)
+#+END_QUOTE
+
+*** \lambda makes any logic INCONSISTENT!
+
+* Types to the rescue                                                 :slide:
+
+** The typed variant of \lambda, called \lambda_\rightarrow, is strongly normalising
+*** Every term has a normal form (terminates)!
+*** Consistency is restored! 
+
+** Every higher order theorem prover has a type system.
+
+* Problem #2: Unification                                             :slide:
+
+ When we enrich the equality we use, we run the risk of ruining unification.
+
+** Unification for \lambda_\rightarrow terms is semi-decidable, and there is not necessarily a MGU.
+
+** There are subsets which are decidable (pattern unification).
+
+** In general, this is a hard problem with no easy solution
+
+*** Pattern unification works for all cases where first-order unification would work.
+
+** This is the sort of thing you waste a whole year trying to figure out... \sad
+
+* Conclusion                                                          :slide:
+
+** We are going to use these tools in a limited way starting this semester in COMP3161.
+
+** The source code is available here:
+
+- https://github.com/liamoc/hilbert (string version)
+
+- https://github.com/liamoc/hilbert/tree/first-order (first-order version)
+
+** Credits: vty library for interface, parsec for parsing
+
+
+#+OPTIONS: num:nil tags:t
+
+#+TAGS: slide(s)
+
+#+HTML_HEAD_EXTRA: <link rel="stylesheet" type="text/css" href="common.css" />
+#+HTML_HEAD_EXTRA: <link rel="stylesheet" type="text/css" href="screen.css" media="screen" />
+#+HTML_HEAD_EXTRA: <link rel="stylesheet" type="text/css" href="projection.css" media="projection" />
+#+HTML_HEAD_EXTRA: <link rel="stylesheet" type="text/css" href="presenter.css" media="presenter" />
+
+#+BEGIN_HTML
+<script type="text/javascript" src="org-html-slideshow.js"></script>
+#+END_HTML
+
+# Local Variables:
+# org-html-head-include-default-style: nil
+# org-html-head-include-scripts: nil
+# End:
