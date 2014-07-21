@@ -81,6 +81,8 @@ defaultKeyBindings = [(KASCII 'x', ArbitraryIO shutdownUi)
                      ,(KASCII 'r', EnterRulesMode)
                      ,(KASCII 'q', NextAssignment)
                      ,(KASCII 'e', PrevAssignment)
+                     ,(KASCII '<', NextLemma)
+                     ,(KASCII '>', PrevLemma)
                      ,(KASCII 'f', SubstituteVars)
                      ]
 
@@ -88,46 +90,48 @@ defaultKeyBindings = [(KASCII 'x', ArbitraryIO shutdownUi)
 main :: IO ()
 main = do
   x <- getArgs
-  rules' <- mapM parse x
-  if any isNothing rules' then
-    putStrLn "Errors found in rules definition."
-  else if null rules' then 
+  if null x then 
     putStrLn "No rules files given"
   else do
-    let Just rules = mconcat rules'
-    c <- newCollection
-    f1 <- newFocusGroup
-    mv <- newEmptyMVar
-
-    e <- editWidget
-    txt <- plainText (T.pack "Enter proof goal:")
-    let proc prompt = schedule (do
-                        focus e
-                        setText txt (T.pack prompt)
-                        setEditText e (T.pack ""))
-                     >> return mv
-    t <- proofTreeWidget rules proc defaultSkin defaultKeyBindings
-    b1 <- vBorder
-    b2 <- vBorder
-    _ <- addToFocusGroup f1 e
-    _ <- addToFocusGroup f1 t
-    onActivate e $ \e' -> (T.unpack <$> getEditText e') >>= putMVar mv
-                              >> setEditText e' (T.pack "")
-                              >> setText txt (T.pack "Hilbert 2.0")
-                              >> focus t
-    w' <- vBox txt e
-    w  <- flip vBox w' =<< hBox b1 =<< hBox t b2
-    setNormalAttribute w' (  def_attr `with_style` bold `with_style` reverse_video)
-    setNormalAttribute e (  def_attr  `with_style` default_style_mask)
-    setFocusAttribute e  def_attr
-    setBoxChildSizePolicy w $ PerChild BoxAuto $ BoxFixed 2
-    _ <- addToCollection c w f1
-    _ <- forkIO $ do goal <- takeMVar mv
-                     case parseTerm goal of 
-                          Just goal -> schedule $ updateWidgetState t $ const $ newModel goal
-                          Nothing   -> return ()
-    runUi c $ defaultContext {skin = (skin defaultContext) { skinVertical = ' ' }
-                             ,normalAttr = def_attr }
-
-
-
+    rules' <- parse $ head x
+    if isNothing rules' then
+      putStrLn "Errors found in rules definition."
+    else do
+      let Just rules = rules'
+      c <- newCollection
+      f1 <- newFocusGroup
+      mv <- newEmptyMVar
+  
+      e <- editWidget
+      txt <- plainText (T.pack "Welcome to Hilbert")
+      let proc prompt = schedule (do
+                          focus e
+                          setText txt (T.pack prompt)
+                          setEditText e (T.pack ""))
+                       >> return mv
+      let proc' text = setText txt (T.pack $ "Hilbert 2.0 │ " ++ text)
+      t <- proofTreeWidget rules proc proc' defaultSkin defaultKeyBindings
+      b1 <- vBorder
+      b2 <- vBorder
+      _ <- addToFocusGroup f1 t
+      _ <- addToFocusGroup f1 e
+      onActivate e $ \e' -> (T.unpack <$> getEditText e') >>= putMVar mv
+                                >> setEditText e' (T.pack "")
+                                >> setText txt (T.pack "Hilbert 2.0 │ ")
+                                >> focus t
+      w' <- vBox txt e
+      w  <- flip vBox w' =<< hBox b1 =<< hBox t b2
+      setNormalAttribute w' (  def_attr `with_style` bold `with_style` reverse_video)
+      setNormalAttribute e (  def_attr  `with_style` default_style_mask)
+      setFocusAttribute e  def_attr
+      setBoxChildSizePolicy w $ PerChild BoxAuto $ BoxFixed 2
+      _ <- addToCollection c w f1
+      _ <- forkIO $ do focus t
+                       case newModel rules of 
+                            Just goal -> schedule $ updateWidgetState t $ const $ goal
+                            Nothing   -> return ()
+      runUi c $ defaultContext {skin = (skin defaultContext) { skinVertical = ' ' }
+                               ,normalAttr = def_attr }
+  
+  
+  

@@ -49,3 +49,13 @@ axiom
    False
    ----- FALSEE
    ?A
+
+prove
+   ((?a /\ ?b) -> ?c)
+   ------------------ CURRY
+   (?a -> (?b -> ?c))
+
+prove
+   (?a -> (?b -> ?c))
+   ------------------ UNCURRY
+   ((?a /\ ?b) -> ?c)

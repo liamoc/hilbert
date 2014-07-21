@@ -36,7 +36,7 @@ instance Monoid Intros where
 data View = ViewNode ViewMode SentenceView RuleTitle [View]
 
 
-viewModel :: Model -> View
+viewModel :: ProofModel -> View
 viewModel (Selected p) = viewZipper Selection p
 viewModel (Tentative (ZZ l (ZZ ul m ur) r) _) = viewZipper (Selecting (not $ null r)
                                                                       (not $ null l)

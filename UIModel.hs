@@ -3,6 +3,7 @@ module UIModel where
 import Prover
 import Rules
 import Data.Maybe
+import Control.Arrow (second)
 
 data ListZipper a = ZZ [a] a [a] deriving Show
 
@@ -24,51 +25,79 @@ toLZ :: [a] -> Maybe (ListZipper a)
 toLZ [] = Nothing
 toLZ (x:xs) = Just $ ZZ [] x xs
 
-data Model = Selected ProofTreeZipper
-           | Tentative (ListZipper (ListZipper ProofTreeZipper)) ProofTreeZipper
+type Model = ListZipper ((RuleName, [Rule]) , ProofModel) 
+
+data ProofModel = Selected ProofTreeZipper
+                | Tentative (ListZipper (ListZipper ProofTreeZipper)) ProofTreeZipper
      
-instance Show Model where 
+instance Show ProofModel where 
   show _ = "get fucked vty"
 
-next :: Model -> Model
-next (Selected p) = Selected $ right p
-next (Tentative p o) = Tentative (rightLZ p) o
 
-prev :: Model -> Model
-prev (Selected p) = Selected $ left p
-prev (Tentative p o) = Tentative (leftLZ p) o
+withProofModel :: (ProofModel -> ProofModel) -> Model -> Model
+withProofModel f = withLZ (second f) 
 
-forward :: Model -> Model
-forward (Selected p) = Selected $ down p
-forward (Tentative c _) = Selected $ derefLZ $ derefLZ c
-
-back :: Model -> Model
-back (Selected p) = Selected $ up p
-back (Tentative _ o) = Selected o
-
-prevVariant :: Model -> Model
-prevVariant (Tentative lz o) = Tentative (withLZ leftLZ lz) o
-prevVariant x = x
-
-nextVariant :: Model -> Model
-nextVariant (Tentative lz o) = Tentative (withLZ rightLZ lz) o
-nextVariant x = x
-
-clearSubtree :: Model -> Model
-clearSubtree (Tentative _ o) = Selected o
-clearSubtree (Selected p) = Selected $ oops p
-
+next, prev, nextLemma, prevLemma, forward, back, prevVariant, nextVariant,clearSubtree, rulemode :: Model -> Model
+next         = withProofModel nextP
+prev         = withProofModel prevP
+forward      = withProofModel forwardP
+back         = withProofModel backP
+nextVariant  = withProofModel nextVariantP
+prevVariant  = withProofModel prevVariantP
+clearSubtree = withProofModel clearSubtreeP
 sentence :: Model -> SentenceSchema
-sentence (Selected p) = getSentence p
-sentence (Tentative _ p) = getSentence p
+sentence = sentenceP . snd . derefLZ
+rulemode m | rules <- snd . fst $ derefLZ m = withProofModel (rulemodeP rules) m
+nextLemma = rightLZ
+prevLemma = leftLZ
 
-rulemode :: [Rule] -> Model -> Model 
-rulemode rs (Selected p) = maybe Selected Tentative (toLZ $ mapMaybe (toLZ . flip rule p) (localRules p ++ rs) ++ (mapMaybe (toLZ . return) (builtins p))) p
-rulemode _ x = x                      
+newProofModel :: [Variable] -> Rule -> ProofModel
+newProofModel vs r = Selected $ newTree vs $ toSubgoal [] vs r
+              
+newModel :: Script -> Maybe Model
+newModel = toLZ . newModel' []
+  where newModel' rules (Axiom r n) = newModel' (r:rules) n
+        newModel' rules (Goal [] r n) = ((name r, rules),newProofModel [] r) : newModel' (r:rules) n
+        newModel' rules (Goal vs r n) = ((name r, rules),newProofModel vs r) : newModel' rules n -- schematic lemmas cannot be used in future proofs
+        newModel' _ End = [] 
 
-newModel :: Sentence -> Model
-newModel = Selected . newTree
+nextP :: ProofModel -> ProofModel
+nextP (Selected p) = Selected $ right p
+nextP (Tentative p o) = Tentative (rightLZ p) o
 
-subst :: Variable -> Term -> Model -> Model
-subst v s (Selected p) = Selected $ addSubst v s p
-subst _ _ x = x
+prevP :: ProofModel -> ProofModel
+prevP (Selected p) = Selected $ left p
+prevP (Tentative p o) = Tentative (leftLZ p) o
+
+forwardP :: ProofModel -> ProofModel
+forwardP (Selected p) = Selected $ down p
+forwardP (Tentative c _) = Selected $ derefLZ $ derefLZ c
+
+backP :: ProofModel -> ProofModel
+backP (Selected p) = Selected $ up p
+backP (Tentative _ o) = Selected o
+
+prevVariantP :: ProofModel -> ProofModel
+prevVariantP (Tentative lz o) = Tentative (withLZ leftLZ lz) o
+prevVariantP x = x
+
+nextVariantP :: ProofModel -> ProofModel
+nextVariantP (Tentative lz o) = Tentative (withLZ rightLZ lz) o
+nextVariantP x = x
+
+clearSubtreeP :: ProofModel -> ProofModel
+clearSubtreeP (Tentative _ o) = Selected o
+clearSubtreeP (Selected p) = Selected $ oops p
+
+sentenceP :: ProofModel -> SentenceSchema
+sentenceP (Selected p) = getSentence p
+sentenceP (Tentative _ p) = getSentence p
+
+rulemodeP :: [Rule] -> ProofModel -> ProofModel 
+rulemodeP rs (Selected p) = maybe Selected Tentative (toLZ $ mapMaybe (toLZ . flip rule p) (localRules p ++ rs) ++ (mapMaybe (toLZ . return) (builtins p))) p
+rulemodeP _ x = x                      
+
+
+substP :: Variable -> Term -> ProofModel -> ProofModel
+substP v s (Selected p) = Selected $ addSubst v s p
+substP _ _ x = x

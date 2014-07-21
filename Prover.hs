@@ -25,8 +25,8 @@ data ProofTreeZipper = PTZ [Variable] [ProofTreeContext] ProofTree
 -}
 
 
-newTree :: Sentence -> ProofTreeZipper
-newTree s = PTZ (freeVariables s) [] $ PT [] [] s Nothing  
+newTree :: [Variable] -> ProofTree -> ProofTreeZipper
+newTree vs = PTZ vs []  
 
 up :: ProofTreeZipper -> ProofTreeZipper
 up (PTZ fv (PTC (sks, lrs, str, name) l r :cs) pt) = PTZ fv cs (PT sks lrs str $ Just (name, reverse l ++ (pt:r)))
@@ -57,17 +57,21 @@ builtins (PTZ fv ctx (PT _ _ str _)) = catMaybes [atom, inside]
                  | otherwise = Nothing
 
 rule :: Rule -> ProofTreeZipper -> [ProofTreeZipper]
-rule r p@(PTZ fv ctx (PT sks lrs str _)) = mapMaybe (uncurry (applyRule p)) $ runRule r skols fv $ getSentence p
+rule r p@(PTZ fv _ _) = mapMaybe (uncurry (applyRule p)) $ runRule r skols fv $ getSentence p
   where applyRule :: ProofTreeZipper -> [Rule] -> Substitution -> Maybe ProofTreeZipper
         applyRule (PTZ fv ctx (PT sks lrs str _)) ps subst 
                 = applySubst subst (PTZ (fv ++ concatMap (freeVariablesRule skols) ps) ctx (PT sks lrs str premises))
-           where premises = Just (name r, map (makePT . skolemise (skols ++ fv)) ps)
-                 makePT (Rule _ vs ps c) = PT vs (map (freshen allRuleNames) ps) c Nothing
+           where premises = Just (name r, map (toSubgoal allRuleNames (skols ++ fv)) ps)
         skols = allSkolems p
         allRuleNames = map name $ localRules p
-        freshen banned v = v { name = head (dropWhile (`elem` banned) (map (name v ++) subscripts))}
-        subscripts =  map show $ iterate (+1) 1
 
+
+toSubgoal :: [RuleName] -> [Variable] -> Rule -> ProofTree
+toSubgoal allRuleNames vars = makePT . skolemise vars
+    where makePT (Rule _ vs ps c) = PT vs (map (freshen allRuleNames) ps) c Nothing
+     --     allRuleNames = map name $ localRules p
+          freshen banned v = v { name = head (dropWhile (`elem` banned) (map (name v ++) subscripts))}
+          subscripts =  map show $ iterate (+ (1 :: Integer)) 1
  
 
 shittymapM :: (a -> Maybe b) -> (c,a) -> Maybe (c, b)

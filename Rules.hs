@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards, PatternGuards #-}
 module Rules ( Rule (..)
              , Term (..)
+             , Script (..)
              , RuleName 
              , Substitution
              , SentenceSchema
@@ -23,6 +24,7 @@ import           Control.Arrow
 import           Control.Applicative
 import           Data.Maybe 
 import           Data.List
+import Debug.Trace
 
 data Term = Symbol String | Skolem String | Variable String [String] | List [Term] 
      deriving (Show, Eq)
@@ -46,6 +48,8 @@ data Rule = Rule { name       :: RuleName
                  , premises   :: [Rule]
                  , conclusion :: SentenceSchema
                  } deriving Show
+
+data Script = Axiom Rule Script | Goal [Variable] Rule Script | End deriving Show
 
 -- First order unification as described by Robinson
 mgu :: Term -> Term -> Maybe Substitution

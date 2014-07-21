@@ -26,6 +26,8 @@ data KeyAction = ArbitraryIO (IO ())
                | EnterRulesMode
                | NextAssignment
                | PrevAssignment
+               | NextLemma
+               | PrevLemma
                | SubstituteVars
 
 
@@ -33,21 +35,24 @@ type KeyBindings = [(Key, KeyAction)]
 type PromptString = String
 type ResponseString = String
 type InputCallback = (PromptString -> IO (MVar ResponseString)) 
+type StringCallback = (PromptString -> IO ()) 
 
-keyActionToIO :: [Rule] -> InputCallback -> KeyAction -> Widget Model -> IO ()
-keyActionToIO _ _ (ArbitraryIO i ) _ = i
-keyActionToIO _ _ (MoveForward   ) r = updateWidgetState r forward 
-keyActionToIO _ _ (MoveBack      ) r = updateWidgetState r back
-keyActionToIO _ _ (MovePrev      ) r = updateWidgetState r prev
-keyActionToIO _ _ (MoveNext      ) r = updateWidgetState r next
-keyActionToIO _ _ (ClearSubtree  ) r = updateWidgetState r clearSubtree
-keyActionToIO l _ (EnterRulesMode) r = updateWidgetState r (rulemode l) 
-keyActionToIO _ _ (NextAssignment) r = updateWidgetState r nextVariant 
-keyActionToIO _ _ (PrevAssignment) r = updateWidgetState r prevVariant   
-keyActionToIO _ c (SubstituteVars) r = do (st, st') <- (     allFreeVariables 
-                                                         &&& allFreeVariables . back
-                                                       ) <$> getState r
-                                          if null st && not (null st') 
+keyActionToIO :: InputCallback -> KeyAction -> Widget Model -> IO ()
+keyActionToIO _ (ArbitraryIO i ) _ = i
+keyActionToIO _ (MoveForward   ) r = updateWidgetState r forward 
+keyActionToIO _ (MoveBack      ) r = updateWidgetState r back
+keyActionToIO _ (MovePrev      ) r = updateWidgetState r prev
+keyActionToIO _ (MoveNext      ) r = updateWidgetState r next
+keyActionToIO _ (ClearSubtree  ) r = updateWidgetState r clearSubtree
+keyActionToIO _ (EnterRulesMode) r = updateWidgetState r rulemode 
+keyActionToIO _ (NextAssignment) r = updateWidgetState r nextVariant 
+keyActionToIO _ (PrevAssignment) r = updateWidgetState r prevVariant   
+keyActionToIO _ (NextLemma     ) r = updateWidgetState r nextLemma
+keyActionToIO _ (PrevLemma     ) r = updateWidgetState r prevLemma
+keyActionToIO c (SubstituteVars) r = do (st, st') <- (     allFreeVariables 
+                                                         &&& allFreeVariables . backP
+                                                       ) . snd . derefLZ  <$> getState r
+                                        if null st && not (null st') 
                                             then do
                                               updateWidgetState r back
                                               handleVarSubst $ nub st'
@@ -56,27 +61,34 @@ keyActionToIO _ c (SubstituteVars) r = do (st, st') <- (     allFreeVariables
     handleVarSubst (x:xs) = do mv <- c $ "Enter assignment for: " ++ x
                                _ <- forkIO $ do maybev <- takeMVar mv
                                                 case parseTerm maybev of 
-                                                  Just v -> do schedule $ updateWidgetState r $ subst x v
+                                                  Just v -> do schedule $ updateWidgetState r $ withLZ (second $ substP x v)
                                                                handleVarSubst xs
                                                   Nothing -> return ()
                                return ()
     handleVarSubst [] = return ()
     allFreeVariables (Selected ( PTZ fv _ _)) = fv 
     allFreeVariables _ = []
-proofTreeWidget :: [Rule] -> InputCallback -> DisplaySkin -> KeyBindings -> IO (Widget Model)
-proofTreeWidget rules callback sk binds = newWidget (newModel (List [])) $ \w ->
-      w { render_ = \ref h _ ->  toImage sk ref h 
-        , keyEventHandler = \ ref k _ -> case lookup k binds of
-                                           Just x  -> keyActionToIO rules callback x ref 
-                                                   >> return True
-                                           Nothing -> return False
-        , growHorizontal_ = const $ return True
-        , growVertical_ = const $ return True
-        } 
 
+proofTreeWidget :: Script -> InputCallback -> StringCallback -> DisplaySkin -> KeyBindings -> IO (Widget Model)
+proofTreeWidget rules callback prompt sk binds = case newModel rules of 
+      Nothing -> error "You must provide at least one goal in the input file."
+      Just rules -> newWidget rules $ \w ->
+        w { render_ = \ref h _ ->  updateBar ref prompt >> toImage sk ref h 
+          , keyEventHandler = \ ref k _ -> case lookup k binds of
+                                             Just x  -> keyActionToIO callback x ref 
+                                                     >> return True
+                                             Nothing -> return False
+          , growHorizontal_ = const $ return True
+          , growVertical_ = const $ return True
+          } 
+updateBar :: Widget Model -> StringCallback -> IO ()
+updateBar ref c = do
+   ZZ l ((n,_),_) r <- getState ref 
+   c $ replicate (length l) '○' ++ "●" ++ replicate (length r) '○' ++ " │ " ++ toSubscript n 
 toImage :: DisplaySkin -> Widget Model -> DisplayRegion -> IO Image
 toImage sk ref h = do 
-   img <- displayView sk . viewModel <$> getState ref 
+   img <- displayView sk . viewModel . snd . derefLZ <$> getState ref 
+    
    let (x,y) = camera img
        y_diff = fromIntegral (region_height h) `div` 2 - y
        shiftUpDown | y_diff > 0  = (background_fill (image_width img) (fromIntegral y_diff) <->)

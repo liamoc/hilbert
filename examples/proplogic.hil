@@ -59,3 +59,14 @@ axiom
    False
    ----- FALSEE
    ?A
+
+axiom
+   -------------- LEM
+   ?a \/ (not ?a)
+
+prove
+   -------------------- EXAMPLE1
+   ?a -> (not (not ?a))
+prove
+   ---------------------- EXAMPLE2
+   (?a -> (not ?a)) -> ?b
