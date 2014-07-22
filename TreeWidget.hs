@@ -29,6 +29,8 @@ data KeyAction = ArbitraryIO (IO ())
                | NextLemma
                | PrevLemma
                | SubstituteVars
+               | DecreasePane
+               | IncreasePane
 
 
 type KeyBindings = [(Key, KeyAction)]
@@ -49,9 +51,11 @@ keyActionToIO _ (NextAssignment) r = updateWidgetState r nextVariant
 keyActionToIO _ (PrevAssignment) r = updateWidgetState r prevVariant   
 keyActionToIO _ (NextLemma     ) r = updateWidgetState r nextLemma
 keyActionToIO _ (PrevLemma     ) r = updateWidgetState r prevLemma
+keyActionToIO _ (DecreasePane  ) r = updateWidgetState r (second (max 0 . subtract 1))
+keyActionToIO _ (IncreasePane  ) r = updateWidgetState r (second (min 70 . succ))
 keyActionToIO c (SubstituteVars) r = do (st, st') <- (     allFreeVariables 
                                                          &&& allFreeVariables . backP
-                                                       ) . snd . derefLZ  <$> getState r
+                                                       ) . snd . derefLZ . fst <$> getState r
                                         if null st && not (null st') 
                                             then do
                                               updateWidgetState r back
@@ -61,7 +65,7 @@ keyActionToIO c (SubstituteVars) r = do (st, st') <- (     allFreeVariables
     handleVarSubst (x:xs) = do mv <- c $ "Enter assignment for: " ++ x
                                _ <- forkIO $ do maybev <- takeMVar mv
                                                 case parseTerm maybev of 
-                                                  Just v -> do schedule $ updateWidgetState r $ withLZ (second $ substP x v)
+                                                  Just v -> do schedule $ updateWidgetState r $ first (withLZ (second $ substP x v))
                                                                handleVarSubst xs
                                                   Nothing -> return ()
                                return ()
@@ -83,26 +87,36 @@ proofTreeWidget rules callback prompt sk binds = case newModel rules of
           } 
 updateBar :: Widget Model -> StringCallback -> IO ()
 updateBar ref c = do
-   ZZ l ((n,_),_) r <- getState ref 
+   (ZZ l ((n,_),_) r, _) <- getState ref 
    c $ replicate (length l) '○' ++ "●" ++ replicate (length r) '○' ++ " │ " ++ toSubscript n 
+
 toImage :: DisplaySkin -> Widget Model -> DisplayRegion -> IO Image
 toImage sk ref h = do 
-   img <- displayView sk . viewModel . snd . derefLZ <$> getState ref 
-    
-   let (x,y) = camera img
-       y_diff = fromIntegral (region_height h) `div` 2 - y
-       shiftUpDown | y_diff > 0  = (background_fill (image_width img) (fromIntegral y_diff) <->)
-                   | y_diff == 0 = id
-                   | otherwise   = dropImageRows (negate y_diff)
-       x_diff :: Int
-       x_diff = fromIntegral (region_width h) `div` 2 - x
-       shiftLeftRight | x_diff < 0  = dropImageCols (negate $ fromIntegral x_diff)
-                      | x_diff == 0 = id
-                      | otherwise   = (background_fill (fromIntegral x_diff) (image_height img) <|>)
+   (proofModel, w) <- (snd . derefLZ *** fromIntegral) <$> getState ref
+   let img = displayView sk $ viewModel proofModel
+       img' = displaySideView sk $ sideViewModel proofModel
+    in return ({-centerOnCamera img (h { region_width = region_width h - w}) True
+           <|>-} char_fill def_attr '╎' 1 (region_height h)
+           <|> centerOnCamera img' (h {region_width = w - 2} )  False
+           <|> char_fill def_attr '╎' 1 (region_height h))
 
-   return $ crop (region_width h, region_height h ) 
-          $ pad  (region_width h, region_height h) 
-          $ shiftUpDown $ shiftLeftRight img 
+
+centerOnCamera :: Image -> DisplayRegion -> Bool -> Image 
+centerOnCamera img h' lr = let
+  (x,y) = camera img
+  y_diff = fromIntegral (region_height h') `div` 2 - y
+  shiftUpDown | y_diff > 0  = if lr then (background_fill 1 {-image_width img-} (fromIntegral y_diff) <->) else id
+              | y_diff == 0 = id
+              | otherwise   = dropImageRows (1 - y_diff)
+  x_diff :: Int
+  x_diff = fromIntegral (region_width h') `div` 2 - x
+  shiftLeftRight | x_diff < 0  = dropImageCols (1 - fromIntegral x_diff)
+                 | x_diff == 0 = id
+                 | otherwise   = if lr then (background_fill (fromIntegral x_diff) 1 {-image_height img-} <|>) else id
+
+  in crop (region_width h', region_height h') 
+   $ pad  (region_width h', region_height h') 
+   $ shiftUpDown $ if lr then shiftLeftRight img else img
 
 toRows :: Image -> [[Image]]
 toRows i = case dropImageRows 1 i of

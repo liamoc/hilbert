@@ -8,7 +8,7 @@ import Data.Maybe
 import Data.Foldable
 import Prelude hiding (mapM, concatMap, elem, sequence,foldr, all)
 import Control.Monad
-
+import qualified Vec
 
 data ProofTree = PT { skolemsT :: [Variable]
                     , rulesT :: [LocalRule]
@@ -52,13 +52,15 @@ left x = x
 oops :: ProofTreeZipper -> ProofTreeZipper
 oops (PTZ fv ctx (PT sks lrs str _)) = PTZ fv ctx (PT sks lrs str Nothing)
 
-builtins :: ProofTreeZipper -> [ProofTreeZipper]
+builtins :: ProofTreeZipper -> [(LocalRule, ProofTreeZipper)]
 builtins (PTZ fv ctx (PT _ _ str _)) = catMaybes [atom, inside]
-    where atom :: Maybe ProofTreeZipper 
-          atom | (List [Symbol _,Symbol "atom"]) <- str = Just (PTZ fv ctx (PT [] [] str (Just ("⟪ atom ⟫", []))))
+    where atom :: Maybe (LocalRule, ProofTreeZipper)
+          atom | (List [Symbol _,Symbol "atom"]) <- str = Just (atomRule, PTZ fv ctx (PT [] [] str (Just ("⟪ atom ⟫", []))))
                | otherwise = Nothing
-          inside | (List [t,Symbol "in",List ls]) <- str, t `elem` ls = Just (PTZ fv ctx (PT [] [] str (Just ("⟪ in ⟫", []))))
+          inside | (List [t,Symbol "in",List ls]) <- str, t `elem` ls = Just (insideRule, PTZ fv ctx (PT [] [] str (Just ("⟪ in ⟫", []))))
                  | otherwise = Nothing
+          atomRule = Rule { name = "⟪ atom ⟫", binders = Vec.Nil, premises = [], conclusion = Symbol "⟪ a syntactic atom ⟫ atom"}
+          insideRule = Rule { name = "⟪ inside ⟫", binders = Vec.Nil, premises = [], conclusion = Symbol "⟪ x ⟫ in ⟪ a list containing x ⟫"}
 
 toSubgoal :: Goal -> ProofTree
 toSubgoal (Goal {..}) = PT boundSkolems assumptions goal Nothing

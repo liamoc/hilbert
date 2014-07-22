@@ -37,11 +37,14 @@ defaultSkin = DS { titleAttr = titleFunc
                  , variableAttr = const $ Attr (SetTo bold) (SetTo bright_green) Default
                  , skolemAttr = const $ Attr Default (SetTo bright_magenta) Default
                  , skolemIntroAttr = const $ Attr Default (SetTo bright_magenta) Default
+                 , ruleVarAttr = const $ Attr Default (SetTo bright_cyan) Default
                  , ruleIntroAttr = const $ Attr Default (SetTo bright_blue) Default
                  , separatePremises = EmptyImage 
                  , vinculumPadding = 0
                  , vinculumAttr   = defSentenceAttr
-                 , vinculumChar   = vincOut
+                 , vinculumChar   = \x -> if x then ' ' else vincOut
+                 , vinculumCenterChar   = \x -> if x then '⋮' else vincOut
+                 , displayTopBar = not
                  , showSchematicDependencies = True
                  , premiseLeftAnnot = onlyInSelL' ( def_attr {attr_fore_color=SetTo bright_yellow} 
                                                   , leftArrow)
@@ -83,6 +86,8 @@ defaultKeyBindings = [(KASCII 'x', ArbitraryIO shutdownUi)
                      ,(KASCII 'e', PrevAssignment)
                      ,(KASCII '<', NextLemma)
                      ,(KASCII '>', PrevLemma)
+                     ,(KASCII '+', DecreasePane)
+                     ,(KASCII '-', IncreasePane)
                      ,(KASCII 'f', SubstituteVars)
                      ]
 

@@ -3,16 +3,20 @@ module Display where
 import View
 import Graphics.Vty
 import Data.List 
+
 data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , sentenceAttr :: ViewMode -> Attr
                       , skolemAttr :: ViewMode -> Attr
                       , variableAttr :: ViewMode -> Attr
                       , skolemIntroAttr :: ViewMode -> Attr
                       , ruleIntroAttr :: ViewMode -> Attr
+                      , ruleVarAttr :: ViewMode -> Attr
                       , separatePremises :: Image 
                       , vinculumPadding :: Int
                       , vinculumAttr   :: ViewMode -> Attr
-                      , vinculumChar   :: Char
+                      , vinculumChar   :: IsHypothetical -> Char
+                      , vinculumCenterChar :: IsHypothetical -> Char
+                      , displayTopBar :: IsHypothetical -> Bool
                       , premiseLeftAnnot :: ViewMode -> (Attr, String)
                       , premiseRightAnnot :: ViewMode -> (Attr, String)
                       , vincLeftAnnot :: ViewMode -> (Attr, String)
@@ -21,8 +25,13 @@ data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , showSchematicDependencies :: Bool
                       }
 
+
+displaySideView :: DisplaySkin -> SideView -> Image
+displaySideView sk (NormalView s) = string (sentenceAttr sk Normal) s
+displaySideView sk (SelectingView ls c rs) = vertCatMid $ intersperse (background_fill 1 2) $ map (displayView sk) ls ++ [displayView sk c] ++ map (displayView sk) rs
+
 displayView :: DisplaySkin -> View -> Image
-displayView sk@(DS {..}) (ViewNode m tks title cs) = let 
+displayView sk@(DS {..}) (ViewNode m hyp tks title cs) = let 
     sidenote = displayViewTitle sk title m
     conclusion = displayViewSchema sk m tks
     premise = horizCatBot $ [uncurry string (premiseLeftAnnot m )]
@@ -31,18 +40,23 @@ displayView sk@(DS {..}) (ViewNode m tks title cs) = let
     vinculum = vinculumFor sk m (fromIntegral $ image_width premise) 
                                 (fromIntegral $ image_width conclusion) 
                                 (fromIntegral $ image_width sidenote)
+                                hyp (null cs)
     middle   = uncurry string (vincLeftAnnot m) 
            <|> invisibleQ' <|> vinculum <|> invisibleQ' <|> sidenote <|> char bgAttr ' '
            <|> uncurry string (vincRightAnnot m)
-  in vertCatMid [premise,middle,conclusion]
+  in vertCatMid $ [premise, middle, conclusion]
  where invisibleQ' = case m of 
          Selection -> invisibleQ
          Selecting {} -> invisibleQ
          _         -> char bgAttr ' '
-vinculumFor :: DisplaySkin -> ViewMode -> Int -> Int -> Int -> Image
-vinculumFor (DS {..}) m prem conc label = let
-    size = max  (max prem conc + vinculumPadding - (label `div` 2)) 4
-  in string (vinculumAttr m) (replicate (fromIntegral size) vinculumChar)
+
+vinculumFor :: DisplaySkin -> ViewMode -> Int -> Int -> Int -> IsHypothetical -> Bool -> Image
+vinculumFor (DS {..}) m prem conc label isHypothetical nocs = let
+    size = max  (max prem conc + vinculumPadding ) 4
+    half1 = fromIntegral size `div` 2
+    half2 = size - half1 - 1 - (label `div` 2)
+  in string (vinculumAttr m) (replicate half1 (vinculumChar isHypothetical) 
+                          ++ ((if nocs then vinculumChar else vinculumCenterChar) isHypothetical:replicate half2 (vinculumChar isHypothetical)))
 
 horizCatBot, vertCatMid :: [Image] -> Image
 horizCatBot = horiz_cat . uniform
@@ -76,6 +90,7 @@ displayViewSchema' (DS {..}) m (ViewVariable s ds)
     | showSchematicDependencies && not (null ds) = displayViewSchema' DS {showSchematicDependencies = False, ..} m (ViewList (ViewVariable s []: map ViewSkolem ds))
     | otherwise =  string (variableAttr m) s 
 displayViewSchema' (DS {..}) m (ViewSkolem s) = string (skolemAttr m) s 
+displayViewSchema' (DS {..}) m (ViewRuleVar s) = string (ruleVarAttr m) s 
 displayViewSchema' (DS {..}) m (ViewSymbol s) = string (sentenceAttr m) s 
                                               
 

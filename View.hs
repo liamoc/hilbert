@@ -1,4 +1,5 @@
 {-# OPTIONS -fno-warn-name-shadowing #-}
+{-# LANGUAGE RecordWildCards #-}
 module View where
 
 import Control.Arrow
@@ -7,6 +8,7 @@ import UIModel
 import Data.Char
 import Rules
 import Prover
+import Vec(at)
 data ViewMode    = Normal
                  | Speculative
                  | Selection
@@ -19,6 +21,7 @@ data ViewMode    = Normal
 data SentenceView = ViewList [SentenceView]
                   | ViewVariable String [String]
                   | ViewSkolem String
+                  | ViewRuleVar String
                   | ViewSymbol String
 
 data RuleTitle = Proven String Intros
@@ -27,34 +30,45 @@ data RuleTitle = Proven String Intros
 
 
 data Intros = I [Variable] [RuleName]
-
+type IsHypothetical = Bool
 
 instance Monoid Intros where 
   mempty = I [] []
   mappend (I a b) (I c d) = I (a ++ c) (b ++ d)
 
-data View = ViewNode ViewMode SentenceView RuleTitle [View]
+data View = ViewNode ViewMode IsHypothetical SentenceView RuleTitle [View]
 
+data SideView = SelectingView [View] View [View]
+              | NormalView String
+
+viewLocalRule :: ViewMode -> LocalRule ->  View
+viewLocalRule = viewRule viewSkolemsAndSchematics False
+
+viewRule :: (a -> SentenceView) -> IsHypothetical -> ViewMode -> Rule a -> View
+viewRule f h m  (Rule {..}) = ViewNode m h (viewSentence f' conclusion) (Proven name (I [] []))  (map (viewRule f' (not h) (downwards m)) premises)
+  where f' = either (ViewRuleVar . (binders `at`)) f
+
+sideViewModel :: ProofModel -> SideView 
+sideViewModel (Tentative (ZZ l (c,_) r) _) = SelectingView (reverse $ map (viewLocalRule Speculative . fst) l) (viewLocalRule Selection c) (map (viewLocalRule Speculative .fst) r)
+sideViewModel _ = NormalView "Information"
 
 viewModel :: ProofModel -> View
 viewModel (Selected p) = viewZipper Selection p
-viewModel (Tentative (ZZ l (ZZ ul m ur) r) _) = viewZipper (Selecting (not $ null r)
-                                                                      (not $ null l)
-                                                                      (not $ null ur)
-                                                                      (not $ null ul)
-                                                           ) m
-
-
+viewModel (Tentative (ZZ l (_, ZZ ul m ur) r) _) = viewZipper (Selecting (not $ null r)
+                                                                         (not $ null l)
+                                                                         (not $ null ur)
+                                                                         (not $ null ul)
+                                                              ) m
 
 
 viewZipper :: ViewMode -> ProofTreeZipper -> View
 viewZipper m (PTZ fv [] pt) = fst $ fst $ viewTree [] m pt
 viewZipper m (PTZ fv ctx p) = fst $ fst $ viewZipper' Normal ctx $ viewTree (concatMap skolemsC ctx) m p
   where viewZipper' m (PTC (sks, lrs, str, name) l r : ctx) acc 
-           = let str' = viewSentence str
+           = let str' = viewSentence viewSkolemsAndSchematics str
                  [l', r'] = map (map (viewTree (concatMap skolemsC ctx ++ sks) m)) [reverse l, r]
                  ((cs,is), wf) = unzip *** and $ unzip $ l' ++ (acc:r')
-             in viewZipper' m ctx ((ViewNode m str' ((if wf then Proven else Unproven) (toSubscript name) (mconcat is)) cs, I sks (map Rules.name lrs)), wf)
+             in viewZipper' m ctx ((ViewNode m False str' ((if wf then Proven else Unproven) (toSubscript name) (mconcat is)) cs, I sks (map Rules.name lrs)), wf)
         viewZipper' _ [] acc = acc
 
 downwards :: ViewMode -> ViewMode
@@ -66,16 +80,18 @@ viewTree :: [Variable] -> ViewMode -> ProofTree -> ((View, Intros), Bool)
 viewTree sks m (PT vs lrs sent ms) = case ms of 
     Just (r, cs) -> let
        ((cs',is), wf) = unzip *** and $ unzip $ map (viewTree (sks ++ vs) (downwards m)) cs
-     in ((ViewNode m sent' ((if wf then Proven else Unproven) (toSubscript r) (mconcat is)) cs',I vs (map (toSubscript . Rules.name) lrs)), wf)
-    Nothing -> ((ViewNode m sent' NoRule [], I vs (map (toSubscript . Rules.name) lrs)), False)
-  where sent' = viewSentence sent
+     in ((ViewNode m False sent' ((if wf then Proven else Unproven) (toSubscript r) (mconcat is)) cs',I vs (map (toSubscript . Rules.name) lrs)), wf)
+    Nothing -> ((ViewNode m False sent' NoRule [], I vs (map (toSubscript . Rules.name) lrs)), False)
+  where sent' = viewSentence viewSkolemsAndSchematics sent
 
+viewSkolemsAndSchematics :: SkolemsAndSchematics -> SentenceView
+viewSkolemsAndSchematics (Schematic v vs) = ViewVariable (toSubscript v) (map toSubscript vs)
+viewSkolemsAndSchematics (Skolem v)       = ViewSkolem (toSubscript v)
 
-viewSentence :: GoalTerm -> SentenceView
-viewSentence (List x)   = ViewList (map viewSentence x)
-viewSentence (Symbol q) = ViewSymbol (toSubscript q)
-viewSentence (Variable (Schematic v vs)) = ViewVariable (toSubscript v) (map toSubscript vs)
-viewSentence (Variable (Skolem v )) = ViewSkolem (toSubscript v)
+viewSentence :: (a -> SentenceView) -> Term a -> SentenceView
+viewSentence f (List x)   = ViewList (map (viewSentence f) x)
+viewSentence f (Symbol q) = ViewSymbol (toSubscript q)
+viewSentence f (Variable v) = f v
 
 toSubscript :: String -> String 
 toSubscript p@(x:_) | isDigit x = p
