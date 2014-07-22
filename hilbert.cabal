@@ -14,4 +14,5 @@ cabal-version:       >=1.8
 executable hilbert
   main-is: Main.hs             
   -- other-modules:       
-  build-depends:       base >=4.6, split >=0.2, containers >=0.5, text >=0.11, vty >=4.7.5,vty-ui >= 1.6, parsec>=3.1, either>=4.3, mtl >=2.1
+  ghc-options: -threaded
+  build-depends:       base >=4.6, split >=0.2, containers >=0.5, text >=0.11, vty >=5.1, parsec>=3.1, either>=4.3, mtl >=2.1, data-default>=0.5

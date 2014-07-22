@@ -16,6 +16,9 @@ data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , vinculumAttr   :: ViewMode -> Attr
                       , vinculumChar   :: IsHypothetical -> Char
                       , vinculumCenterChar :: IsHypothetical -> Char
+                      , verticalLine :: Char
+                      , unprovenChar :: Char
+                      , provenChar :: Char
                       , displayTopBar :: IsHypothetical -> Bool
                       , premiseLeftAnnot :: ViewMode -> (Attr, String)
                       , premiseRightAnnot :: ViewMode -> (Attr, String)
@@ -28,7 +31,7 @@ data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
 
 displaySideView :: DisplaySkin -> SideView -> Image
 displaySideView sk (NormalView s) = string (sentenceAttr sk Normal) s
-displaySideView sk (SelectingView ls c rs) = vertCatMid $ intersperse (background_fill 1 2) $ map (displayView sk) ls ++ [displayView sk c] ++ map (displayView sk) rs
+displaySideView sk (SelectingView ls c rs) = vertCatMid $ intersperse (backgroundFill 1 2) $ map (displayView sk) ls ++ [displayView sk c] ++ map (displayView sk) rs
 
 displayView :: DisplaySkin -> View -> Image
 displayView sk@(DS {..}) (ViewNode m hyp tks title cs) = let 
@@ -37,9 +40,9 @@ displayView sk@(DS {..}) (ViewNode m hyp tks title cs) = let
     premise = horizCatBot $ [uncurry string (premiseLeftAnnot m )]
                          ++ intersperse separatePremises (map (displayView sk) cs)
                          ++ [uncurry string (premiseRightAnnot m)]
-    vinculum = vinculumFor sk m (fromIntegral $ image_width premise) 
-                                (fromIntegral $ image_width conclusion) 
-                                (fromIntegral $ image_width sidenote)
+    vinculum = vinculumFor sk m (fromIntegral $ imageWidth premise) 
+                                (fromIntegral $ imageWidth conclusion) 
+                                (fromIntegral $ imageWidth sidenote)
                                 hyp (null cs)
     middle   = uncurry string (vincLeftAnnot m) 
            <|> invisibleQ' <|> vinculum <|> invisibleQ' <|> sidenote <|> char bgAttr ' '
@@ -59,28 +62,28 @@ vinculumFor (DS {..}) m prem conc label isHypothetical nocs = let
                           ++ ((if nocs then vinculumChar else vinculumCenterChar) isHypothetical:replicate half2 (vinculumChar isHypothetical)))
 
 horizCatBot, vertCatMid :: [Image] -> Image
-horizCatBot = horiz_cat . uniform
+horizCatBot = horizCat . uniform
   where 
-    uniform ls = let m = maximum $ map image_height ls
-                  in map (\i -> background_fill (image_width i) (m - image_height i) <-> i) ls
-vertCatMid = vert_cat . uniform'
+    uniform ls = let m = maximum $ map imageHeight ls
+                  in map (\i -> backgroundFill (imageWidth i) (m - imageHeight i) <-> i) ls
+vertCatMid = vertCat . uniform'
   where
-    uniform' ls = let m = maximum $ map image_width ls
-                   in map (\i -> let p1 = (m - image_width i) `div` 2
-                                     p2 = (m - image_width i) - p1
-                                  in horiz_cat [ background_fill p1 (image_height i)
-                                               , i
-                                               , background_fill p2 (image_height i)])
+    uniform' ls = let m = maximum $ map imageWidth ls
+                   in map (\i -> let p1 = (m - imageWidth i) `div` 2
+                                     p2 = (m - imageWidth i) - p1
+                                  in horizCat [ backgroundFill p1 (imageHeight i)
+                                              , i
+                                              , backgroundFill p2 (imageHeight i)])
                           ls
 
 displayViewTitle :: DisplaySkin -> RuleTitle -> ViewMode -> Image
-displayViewTitle _ NoRule _ = empty_image
-displayViewTitle (DS {..}) (Proven s (I sk rs)) m = string (titleAttr True m)  s <|> string (sentenceAttr m) " " <|> horiz_cat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m)) sk ++ map (string (ruleIntroAttr m)) rs) 
-displayViewTitle (DS {..}) (Unproven s (I sk rs)) m = string (titleAttr False m) s <|> string (sentenceAttr m) " " <|> horiz_cat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m)) sk ++ map (string (ruleIntroAttr m)) rs) 
+displayViewTitle _ NoRule _ = emptyImage
+displayViewTitle (DS {..}) (Proven s (I sk rs)) m = string (titleAttr True m)  s <|> string (sentenceAttr m) " " <|> horizCat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m)) sk ++ map (string (ruleIntroAttr m)) rs) 
+displayViewTitle (DS {..}) (Unproven s (I sk rs)) m = string (titleAttr False m) s <|> string (sentenceAttr m) " " <|> horizCat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m)) sk ++ map (string (ruleIntroAttr m)) rs) 
 
 
 displayViewSchema :: DisplaySkin -> ViewMode -> SentenceView -> Image
-displayViewSchema sk@(DS {..}) m (ViewList ss) = horiz_cat (intersperse (string (sentenceAttr m) " ") $ map (displayViewSchema' sk m) ss) 
+displayViewSchema sk@(DS {..}) m (ViewList ss) = horizCat (intersperse (string (sentenceAttr m) " ") $ map (displayViewSchema' sk m) ss) 
 displayViewSchema sk n v = displayViewSchema' sk n v
 displayViewSchema' :: DisplaySkin -> ViewMode -> SentenceView -> Image
 displayViewSchema' sk@(DS {..}) m (ViewList ss) = string (sentenceAttr m) "(" 
@@ -95,4 +98,4 @@ displayViewSchema' (DS {..}) m (ViewSymbol s) = string (sentenceAttr m) s
                                               
 
 invisibleQ :: Image
-invisibleQ = char (def_attr {attr_style = SetTo 0x80}) ' '
+invisibleQ = char (defAttr {attrStyle = SetTo 0x80}) ' '

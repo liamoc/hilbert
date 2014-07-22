@@ -9,6 +9,8 @@ import Data.Char
 import Rules
 import Prover
 import Vec(at)
+import Data.List(nub)
+
 data ViewMode    = Normal
                  | Speculative
                  | Selection
@@ -85,7 +87,7 @@ viewTree sks m (PT vs lrs sent ms) = case ms of
   where sent' = viewSentence viewSkolemsAndSchematics sent
 
 viewSkolemsAndSchematics :: SkolemsAndSchematics -> SentenceView
-viewSkolemsAndSchematics (Schematic v vs) = ViewVariable (toSubscript v) (map toSubscript vs)
+viewSkolemsAndSchematics (Schematic v vs) = ViewVariable (toSubscript v) (nub $ map toSubscript vs)
 viewSkolemsAndSchematics (Skolem v)       = ViewSkolem (toSubscript v)
 
 viewSentence :: (a -> SentenceView) -> Term a -> SentenceView
