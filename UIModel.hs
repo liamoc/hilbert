@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternGuards #-}
 module UIModel where
 
 import Prover
@@ -25,7 +26,7 @@ toLZ :: [a] -> Maybe (ListZipper a)
 toLZ [] = Nothing
 toLZ (x:xs) = Just $ ZZ [] x xs
 
-type Model = ListZipper ((RuleName, [Rule]) , ProofModel) 
+type Model = ListZipper ((RuleName, [Axiom]) , ProofModel) 
 
 data ProofModel = Selected ProofTreeZipper
                 | Tentative (ListZipper (ListZipper ProofTreeZipper)) ProofTreeZipper
@@ -45,20 +46,21 @@ back         = withProofModel backP
 nextVariant  = withProofModel nextVariantP
 prevVariant  = withProofModel prevVariantP
 clearSubtree = withProofModel clearSubtreeP
-sentence :: Model -> SentenceSchema
+
+sentence :: Model -> GoalTerm
 sentence = sentenceP . snd . derefLZ
+
 rulemode m | rules <- snd . fst $ derefLZ m = withProofModel (rulemodeP rules) m
 nextLemma = rightLZ
 prevLemma = leftLZ
 
-newProofModel :: [Variable] -> Rule -> ProofModel
-newProofModel vs r = Selected $ newTree vs $ toSubgoal [] vs r
+newProofModel :: Goal -> ProofModel
+newProofModel r = Selected $ newTree (schematicsInGoal r) $ toSubgoal r
               
 newModel :: Script -> Maybe Model
 newModel = toLZ . newModel' []
   where newModel' rules (Axiom r n) = newModel' (r:rules) n
-        newModel' rules (Goal [] r n) = ((name r, rules),newProofModel [] r) : newModel' (r:rules) n
-        newModel' rules (Goal vs r n) = ((name r, rules),newProofModel vs r) : newModel' rules n -- schematic lemmas cannot be used in future proofs
+        newModel' rules (Obligation (rn,g) n) = ((rn, rules),newProofModel g) : newModel' (maybeToList (assume rn g) ++ rules) n
         newModel' _ End = [] 
 
 nextP :: ProofModel -> ProofModel
@@ -89,15 +91,14 @@ clearSubtreeP :: ProofModel -> ProofModel
 clearSubtreeP (Tentative _ o) = Selected o
 clearSubtreeP (Selected p) = Selected $ oops p
 
-sentenceP :: ProofModel -> SentenceSchema
-sentenceP (Selected p) = getSentence p
-sentenceP (Tentative _ p) = getSentence p
+sentenceP :: ProofModel -> GoalTerm
+sentenceP (Selected p) = goalZ p
+sentenceP (Tentative _ p) = goalZ p
 
-rulemodeP :: [Rule] -> ProofModel -> ProofModel 
-rulemodeP rs (Selected p) = maybe Selected Tentative (toLZ $ mapMaybe (toLZ . flip rule p) (localRules p ++ rs) ++ (mapMaybe (toLZ . return) (builtins p))) p
+rulemodeP :: [Axiom] -> ProofModel -> ProofModel 
+rulemodeP rs (Selected p) = maybe Selected Tentative (toLZ $ mapMaybe (toLZ . flip rule p) (localRules p ++ map localise rs) ++ (mapMaybe (toLZ . return) (builtins p))) p
 rulemodeP _ x = x                      
 
-
-substP :: Variable -> Term -> ProofModel -> ProofModel
+substP :: Variable -> GoalTerm -> ProofModel -> ProofModel
 substP v s (Selected p) = Selected $ addSubst v s p
 substP _ _ x = x

@@ -1,29 +1,33 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, RecordWildCards #-}
 {-# OPTIONS -fno-warn-name-shadowing #-}
 module Prover where
 
-import Data.Monoid
 import Rules
-import Control.Arrow(second)
-import Control.Applicative
-import Data.List
+import Data.List hiding (concatMap, elem, foldr, all)
 import Data.Maybe
-import Data.Traversable
-import Prelude hiding (mapM)
-data ProofTree = PT [Variable] [Rule] Sentence (Maybe (RuleName, [ProofTree]))
-
-data ProofTreeContext = PTC ([Variable], [Rule], Sentence, RuleName) [ProofTree] [ProofTree] 
-
-data ProofTreeZipper = PTZ [Variable] [ProofTreeContext] ProofTree
+import Data.Foldable
+import Prelude hiding (mapM, concatMap, elem, sequence,foldr, all)
+import Control.Monad
 
 
+data ProofTree = PT { skolemsT :: [Variable]
+                    , rulesT :: [LocalRule]
+                    , goalT :: GoalTerm 
+                    , subgoalsT :: Maybe (RuleName, [ProofTree])
+                    }
 
-{-
+data ProofTreeContext = PTC ([Variable], [LocalRule], GoalTerm, RuleName) [ProofTree] [ProofTree] 
 
+data ProofTreeZipper = PTZ { schematicsZ :: [Variable] , contextZ :: [ProofTreeContext] , goalTreeZ :: ProofTree }
 
+skolemsZ :: ProofTreeZipper -> [Variable]
+skolemsZ (PTZ _ ctx (PT sks _ _ _)) = concatMap skolemsC ctx ++ sks
 
--}
+skolemsC :: ProofTreeContext -> [Variable]
+skolemsC (PTC (sks,_,_,_)_ _) = sks
 
+goalZ :: ProofTreeZipper -> GoalTerm
+goalZ = goalT . goalTreeZ
 
 newTree :: [Variable] -> ProofTree -> ProofTreeZipper
 newTree vs = PTZ vs []  
@@ -56,55 +60,40 @@ builtins (PTZ fv ctx (PT _ _ str _)) = catMaybes [atom, inside]
           inside | (List [t,Symbol "in",List ls]) <- str, t `elem` ls = Just (PTZ fv ctx (PT [] [] str (Just ("⟪ in ⟫", []))))
                  | otherwise = Nothing
 
-rule :: Rule -> ProofTreeZipper -> [ProofTreeZipper]
-rule r p@(PTZ fv _ _) = mapMaybe (uncurry (applyRule p)) $ runRule r skols fv $ getSentence p
-  where applyRule :: ProofTreeZipper -> [Rule] -> Substitution -> Maybe ProofTreeZipper
-        applyRule (PTZ fv ctx (PT sks lrs str _)) ps subst 
-                = applySubst subst (PTZ (fv ++ concatMap (freeVariablesRule skols) ps) ctx (PT sks lrs str premises))
-           where premises = Just (name r, map (toSubgoal allRuleNames (skols ++ fv)) ps)
-        skols = allSkolems p
-        allRuleNames = map name $ localRules p
+toSubgoal :: Goal -> ProofTree
+toSubgoal (Goal {..}) = PT boundSkolems assumptions goal Nothing
 
+rule :: LocalRule -> ProofTreeZipper -> [ProofTreeZipper]
+rule r p = maybeToList $ 
+ let gamma = KnownVars (skolemsZ p) (schematicsZ p) (map name $ localRules p)
+  in do (n,u,subgoals,gamma') <- runRule gamma r (goalZ p)
+        let p' = applySubst u p
+        return $ p' { schematicsZ = knownSchematics gamma', goalTreeZ = (goalTreeZ p') { subgoalsT = Just (n, map toSubgoal subgoals)} }
 
-toSubgoal :: [RuleName] -> [Variable] -> Rule -> ProofTree
-toSubgoal allRuleNames vars = makePT . skolemise vars
-    where makePT (Rule _ vs ps c) = PT vs (map (freshen allRuleNames) ps) c Nothing
-     --     allRuleNames = map name $ localRules p
-          freshen banned v = v { name = head (dropWhile (`elem` banned) (map (name v ++) subscripts))}
-          subscripts =  map show $ iterate (+ (1 :: Integer)) 1
- 
+applySubst :: Unifier -> ProofTreeZipper -> ProofTreeZipper 
+applySubst u (PTZ fv ctx pt) = let fv' = fv `afterSubst` u
+                                   ctx' = map (applySubstPTC u) ctx
+                                   pt'  = applySubstPT u pt
+                                in PTZ fv' ctx' pt'
+   where applySubstPT :: Unifier -> ProofTree -> ProofTree 
+         applySubstPT u (PT sks lrs str gs) 
+           = PT sks (map (`substRule` u) lrs)
+                    (str >>= u)
+                    (fmap (fmap $ map $ applySubstPT u) gs)
+         applySubstPTC :: Unifier -> ProofTreeContext -> ProofTreeContext 
+         applySubstPTC u (PTC (vs,lrs,str,r) pts1 pts2)
+           = PTC (vs, map (`substRule` u) lrs, str >>= u, r)
+                 (map (applySubstPT u) pts1) 
+                 (map (applySubstPT u) pts2)
 
-shittymapM :: (a -> Maybe b) -> (c,a) -> Maybe (c, b)
-shittymapM f (a,b) = (,) a <$> f b
- 
-applySubst :: Substitution -> ProofTreeZipper -> Maybe ProofTreeZipper 
-applySubst s (PTZ fv ctx pt) = let fv'  = variableSetSubst s fv
-                                in do ctx' <- mapM (applySubstPTC s) ctx
-                                      pt'  <- applySubstPT s pt
-                                      return $ PTZ fv' ctx' pt'
-   where applySubstPT :: Substitution -> ProofTree -> Maybe ProofTree 
-         applySubstPT s (PT vs lrs str ps) = do
-                 str' <- substitute s str
-                 ps'  <- mapM (shittymapM (mapM (applySubstPT s))) ps 
-                 lrs' <- mapM (substituteRule s) lrs
-                 return $  PT vs lrs' str' ps' 
-         applySubstPTC :: Substitution -> ProofTreeContext -> Maybe ProofTreeContext
-         applySubstPTC s (PTC (vs,lrs,str,r) pts1 pts2) = do
-                 lrs' <- mapM (substituteRule s) lrs
-                 str' <- substitute s str 
-                 pts1' <- mapM (applySubstPT s) pts1
-                 pts2' <- mapM (applySubstPT s) pts2
-                 return (PTC (vs,lrs', str',r) pts1' pts2')
-         
+addSubst :: Variable -> GoalTerm -> ProofTreeZipper -> ProofTreeZipper
+addSubst k v z = 
+  let r = filter (== Schematic k []) $ toList $ goalZ z
+   in applySubst (foldr (\x s -> if canSubst x v then (x ~> v) >=> s else s) return r) z
+  where canSubst :: SkolemsAndSchematics -> GoalTerm -> Bool
+        canSubst (Schematic _ ks) t | all (`elem` ks) (allSkolems t) = True
+        canSubst _ _ = False 
 
-addSubst :: Variable -> Term -> ProofTreeZipper -> ProofTreeZipper
-addSubst k v z = case applySubst (subst k v) z of Just x -> x; _ -> z
-localRules :: ProofTreeZipper -> [Rule]
-localRules (PTZ fv ctx (PT sks lrs str _)) = concatMap localRulesC ctx ++ lrs
-   where localRulesC (PTC (sks,lrs,_,_)_ _) = lrs
-allSkolems :: ProofTreeZipper -> [Variable]
-allSkolems (PTZ fv ctx (PT sks lrs str _)) = concatMap skolemsC ctx ++ sks
-skolemsC :: ProofTreeContext -> [Variable]
-skolemsC (PTC (sks,lrs,_,_)_ _) = sks
-getSentence :: ProofTreeZipper -> SentenceSchema
-getSentence (PTZ fv ctx (PT _ _ str _)) = str
+localRules :: ProofTreeZipper -> [LocalRule]
+localRules (PTZ _ ctx (PT _ lrs _ _)) = concatMap localRulesC ctx ++ lrs
+   where localRulesC (PTC (_,lrs,_,_)_ _) = lrs

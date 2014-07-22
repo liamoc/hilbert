@@ -67,6 +67,8 @@ axiom
 prove
    -------------------- EXAMPLE1
    ?a -> (not (not ?a))
+
 prove
-   ---------------------- EXAMPLE2
-   (?a -> (not ?a)) -> ?b
+   -------------------- EXAMPLE2
+   (not (not ?a)) -> ?a
+   

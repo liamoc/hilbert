@@ -1,139 +1,202 @@
-{-# LANGUAGE RecordWildCards, PatternGuards #-}
-module Rules ( Rule (..)
-             , Term (..)
-             , Script (..)
-             , RuleName 
-             , Substitution
-             , SentenceSchema
-             , Sentence 
-             , Variable
-             , runRule
-             , substitute
-             , freeVariables
-             , subst
-             , getS
-             , ignoreSubst
-             , substituteRule
-             , freeVariablesRule
-             , skolemise
-             , variableSetSubst
-             ) where
+{-# LANGUAGE RecordWildCards, PatternGuards, ExistentialQuantification, DeriveFoldable, DeriveTraversable, DeriveFunctor, GADTs, DataKinds, KindSignatures, EmptyDataDecls #-}
+module Rules where
 
-import           Data.Monoid
-import           Control.Arrow
-import           Control.Applicative
-import           Data.Maybe 
-import           Data.List
+import Data.Monoid
+import Control.Arrow
+import Control.Applicative
+import Data.Maybe 
+import Data.Foldable (toList, Foldable(..))
+import Data.Traversable
 import Debug.Trace
+import Control.Monad.Trans.Either
+import Control.Monad.Trans
+import Control.Monad
+import Vec hiding (head)
+data Term v = Symbol String | Variable v | List [Term v] 
+     deriving (Show, Eq, Foldable, Traversable,Functor)
 
-data Term = Symbol String | Skolem String | Variable String [String] | List [Term] 
-     deriving (Show, Eq)
+
+instance Monad Term where 
+  return = Variable 
+  Symbol x   >>= _     = Symbol x 
+  Variable v >>= sigma = sigma v 
+  List vs    >>= sigma = List $ map (>>= sigma) vs
+
+data SkolemsAndSchematics = Skolem Variable
+                          | Schematic Variable [Variable]
+                          deriving (Show)
+
+instance Eq SkolemsAndSchematics where 
+  Skolem a      == Skolem b      = a == b
+  Schematic a _ == Schematic b _ = a == b
+  _             == _             = False
 
 type RuleName = String
-data Substitution = S {getS :: [(Variable,Term)] } deriving Show
-type SentenceSchema = Term
-type Sentence = Term
 type Variable = String
+data Void
+type GoalTerm = Term SkolemsAndSchematics
 
-instance Monoid Substitution where 
-  mappend (S d') s@(S d) = S (map (second (fromJust .  substitute s)) d' ++ d)
-  mempty = S [] 
-
-subst :: Variable -> Term -> Substitution 
-subst v t = S [(v,t)]
+type LocalRule = Rule SkolemsAndSchematics
+type Axiom = Rule Void
 
 
-data Rule = Rule { name       :: RuleName
-                 , schematics :: [Variable]
-                 , premises   :: [Rule]
-                 , conclusion :: SentenceSchema
-                 } deriving Show
 
-data Script = Axiom Rule Script | Goal [Variable] Rule Script | End deriving Show
+data Rule v = forall (t :: Nat).
+              Rule { name       :: RuleName
+                   , binders    :: Vec t Variable
+                   , premises   :: [Rule (Either (Fin t) v)]
+                   , conclusion :: Term (Either (Fin t) v)
+                   }
+
+
+instance Show (Rule a) where 
+  show = const "blah"
+
+(~>) :: (Eq a) => a -> Term a -> a -> Term a
+(v ~> t) e | v == e = t 
+           | otherwise = Variable e
+
+data Goal = Goal { boundSkolems :: [Variable]
+                 , assumptions :: [LocalRule]
+                 , goal :: GoalTerm
+                 }
+
+data ApplicatedRule = AR { aName :: RuleName
+                         , aPremises :: [LocalRule]
+                         , aConclusion :: GoalTerm
+                         }
+
+data Script = Axiom Axiom Script | Obligation (RuleName, Goal) Script | End 
+
+type Unifier = SkolemsAndSchematics -> Term SkolemsAndSchematics
 
 -- First order unification as described by Robinson
-mgu :: Term -> Term -> Maybe Substitution
-mgu (Variable v _)  (Variable v' _) | v == v' = return mempty
-mgu (Symbol t)    (Symbol t')       | t == t' = return mempty
-mgu (Skolem t)    (Skolem t')       | t == t' = return mempty
-mgu (List [])     (List [])               = return mempty
-mgu (List (x:xs)) (List (y:ys))           = do sigma1 <- mgu  x y
-                                               xs' <- List <$> mapM (substitute sigma1) xs
-                                               ys' <- List <$> mapM (substitute sigma1) ys
-                                               sigma2 <- mgu xs' ys'
-                                               return (sigma1 <> sigma2)
-mgu (Variable v k) t 
-  | v `notElem` freeVariables t   
-  , all (`elem` k) (skolems t) 
-  = return (subst v t)
-mgu t (Variable v k) 
-  | v `notElem` freeVariables t   
-  , all (`elem` k) (skolems t)
-  = return (subst v t)
-mgu _ _                                 = Nothing
-
-runRule :: Rule -> [Variable] -> [Variable] -> Sentence -> [([Rule], Substitution)]
-runRule (Rule {..}) sks fv str = let fs = freshen schematics (fv ++ sks)
-                                  in maybeToList $ do
-                                      sigma <- mgu str =<< substitute fs conclusion
-                                      premises' <- mapM (substituteRule fs) premises
-                                      return (premises', sigma)
-
-        where freshen vars banned = mconcat $ snd $ mapAccumR forEachName banned vars
-              forEachName banned v = let n = freshenName banned v
-                                      in (n:banned , subst v (Variable n sks))
-
-freshenName banned v = head $ dropWhile (`elem` banned) $ v : map (v ++) subscripts
-    where subscripts = map show $ iterate (+1) 1
-
-substituteRule :: Substitution -> Rule -> Maybe Rule 
-substituteRule subst (Rule n vs ps c) = let
-    subst' = ignoreSubst vs subst
- in Rule n vs <$> mapM (substituteRule subst) ps <*> substitute subst c
-
-ignoreSubst :: [Variable] -> Substitution -> Substitution
-ignoreSubst vs subst = S (filter ((`notElem` vs) . fst) $ getS subst )
-
-skolems :: Term -> [Variable]
-skolems (Variable v vs) = []
-skolems (Skolem t) = [t]
-skolems (Symbol s) = []
-skolems (List ls) = ls >>= skolems
+mgu :: GoalTerm -> GoalTerm -> Maybe Unifier
+mgu a b | a == b = return return
+mgu (List (x:xs)) (List (y:ys)) = do 
+  sigma1 <- mgu  x y
+  sigma2 <- List ( map (>>= sigma1) xs) `mgu` List ( map (>>= sigma1) ys)
+  return (sigma1 >=> sigma2)
+mgu (Variable (Schematic v k)) t 
+  | v `notElem` allSchematics t   
+  , all (`elem` k) (allSkolems t) 
+  = return (Schematic v k ~> t)
+mgu t (Variable (Schematic v k)) 
+  | v `notElem` allSchematics t   
+  , all (`elem` k) (allSkolems t)
+  = return (Schematic v k ~> t)
+mgu _ _ = Nothing
 
 
-skolemise :: [Variable] -> Rule -> Rule 
-skolemise banned (Rule {..}) = let renaming = map (id &&& freshenName banned) schematics
-                                in Rule { name = name
-                                        , schematics = schematics
-                                        , premises = map (renameRule renaming) premises
-                                        , conclusion = rename renaming conclusion 
-                                        }
-   where rename rs (Variable v vs) | Just x <- lookup v rs = Skolem x
-         rename rs (List ls) = List (map (rename rs) ls)
-         rename rs a = a
-         renameRule rn (Rule {..}) = Rule { name = name
-                                          , schematics = schematics
-                                          , premises = map (renameRule renaming') premises
-                                          , conclusion = rename renaming' conclusion
-                                          }
-           where renaming' = filter ((`notElem` schematics) . fst) rn
+asSchematic :: SkolemsAndSchematics -> Maybe Variable 
+asSchematic (Skolem _)      = Nothing 
+asSchematic (Schematic v _) = Just v
 
-substitute :: Substitution -> SentenceSchema -> Maybe SentenceSchema
-substitute sigma (Variable v vs) = case lookup v (getS sigma) of 
-                                     Just t -> if not (any (`notElem` vs) (skolems t)) 
-                                               then Just t else Nothing
-                                     Nothing -> Just ( Variable v vs)
-substitute sigma (List terms) = List <$> mapM (substitute sigma) terms
-substitute _     x            = Just x
+asSkolem :: SkolemsAndSchematics -> Maybe Variable 
+asSkolem (Skolem v)      = Just v
+asSkolem (Schematic _ _) = Nothing
+           
+allSchematics, allSkolems :: GoalTerm -> [Variable] 
+allSchematics = mapMaybe asSchematic . toList 
+allSkolems = mapMaybe asSkolem . toList
 
-freeVariables :: Term -> [Variable]
-freeVariables (Variable s _) = [s]
-freeVariables (List t)     = t >>= freeVariables
-freeVariables _  = []
+allInRule :: (a -> Maybe Variable) -> Rule a -> [Variable]
+allInRule f (Rule {..}) = mapMaybe f' (toList conclusion) ++ concatMap (allInRule f') premises
+  where f' = either (const Nothing) f
 
-freeVariablesRule :: [Variable] -> Rule -> [Variable]
-freeVariablesRule sks (Rule {..}) = filter (`notElem` (schematics ++ sks)) $ freeVariables conclusion ++ concatMap (freeVariablesRule (schematics ++ sks)) premises
+data KnownVars = KnownVars { knownSkolems    :: BoundSkolems
+                           , knownSchematics :: KnownSchematics
+                           , knownRules      :: [RuleName]
+                           }
+type BoundSkolems = [Variable]
+type KnownSchematics = [Variable]
+
+substRule :: Rule a -> (a -> Term b) -> Rule b
+substRule (Rule {..}) f = Rule { conclusion = conclusion  >>= newSubst
+                               , premises = map (`substRule` newSubst) premises
+                               , ..
+                               }
+  where newSubst = either (return . Left) (runEitherT . lift . f)
+
+-- skolemise and applicate seem like duals
+skolemise :: KnownVars -> Rule SkolemsAndSchematics -> Goal
+skolemise gamma (Rule {..}) = let (newSkolems, newNames) = mapAccumR forEachName [] binders
+                                  subst (Left x)  = newNames `at` x
+                                  subst (Right x) = Variable x
+                               in ( Goal { boundSkolems = newSkolems
+                                         , goal = conclusion >>= subst
+                                         , assumptions = renameRules gamma (map (`substRule` subst) premises)
+                                         })
+  where forEachName banned v = let n = freshenName (banned ++ names gamma) v 
+                                in (n:banned ,  Variable (Skolem n))
+
+renameRules :: KnownVars -> [LocalRule] -> [LocalRule]
+renameRules gamma x = snd $ mapAccumR renameRules' (knownRules gamma) x
+  where renameRules' banned (Rule {..}) = let n = freshenName banned name 
+                                           in (n:banned, Rule {name = n,..})
 
 
-variableSetSubst :: Substitution -> [Variable] -> [Variable]
-variableSetSubst (S ss) vs = (freeVariables =<< map snd ss) ++ filter (`notElem` map fst ss) vs
+applicate :: KnownVars -> Rule SkolemsAndSchematics -> ([Variable],ApplicatedRule)
+applicate gamma (Rule {..}) = let (newSchematics, newNames) = mapAccumR forEachName [] binders
+                                  subst (Left x)  = newNames `at` x
+                                  subst (Right x) = Variable x
+                               in (newSchematics, AR { aConclusion = conclusion >>= subst
+                                                     , aPremises   = map (`substRule` subst) premises
+                                                     , aName       = name
+                                                     })
+  where forEachName banned v = let n = freshenName (banned ++ names gamma) v 
+                                in (n:banned , Variable (Schematic n (knownSkolems gamma)))
+
+
+data Toplevel = Toplevel RuleName [Rule Variable] (Term Variable)
+
+generalise :: Toplevel -> Axiom 
+generalise (Toplevel n ps c) 
+  | ExI (Flip ss) <- fromList $ concatMap (allInRule Just) ps ++ toList c
+  , sigma <- Variable . Left . fromJust . flip findIx ss
+  =  Rule n ss (map (`substRule` sigma) ps) (c >>= sigma)
+
+makeObligation :: [Variable] -> Toplevel -> (RuleName,Goal)
+makeObligation schematics (Toplevel n ps c) = (n, Goal skolems (map (`substRule` sigma) ps) (c >>= sigma))
+  where sigma x | x `elem` skolems = Variable (Skolem x)
+                | otherwise        = Variable (Schematic x [])
+        skolems = filter (`notElem` schematics) $ toList c ++ concatMap (allInRule Just) ps
+
+
+names :: KnownVars -> [Variable]
+names (KnownVars a b _) = a ++ b 
+
+
+freshenName :: [Variable] -> Variable -> Variable
+freshenName banned v = head $ filter (not . null) $ filter (`notElem` banned) $ v : map (v ++) subscripts
+  where subscripts = map show $ iterate (succ :: Integer -> Integer) 1
+
+
+runRule :: KnownVars -> Rule SkolemsAndSchematics -> GoalTerm -> Maybe (RuleName, Unifier, [Goal], KnownVars)
+runRule gamma rule t = let (newSchematics, AR name ass conc) = applicate gamma rule 
+                           gamma' = gamma { knownSchematics = knownSchematics gamma ++ newSchematics }
+                        in flip fmap (t `mgu` conc) $ \u -> 
+                             ( name
+                             , u
+                             , map (skolemise gamma' . (`substRule` u)) ass
+                             , gamma' { knownSchematics = knownSchematics gamma' `afterSubst` u }
+                             )
+
+afterSubst :: [Variable] -> Unifier -> [Variable]
+afterSubst (v:vs) u | u (Schematic v []) == Variable (Schematic v []) = v:afterSubst vs u
+                    | otherwise = afterSubst vs u
+afterSubst [] _ = []
+
+assume :: RuleName -> Goal -> Maybe Axiom
+assume n (Goal _ as c) = do
+  guard $ null $ concatMap (allInRule asSchematic) as
+  guard $ null $ allSchematics c 
+  let t = Toplevel n (map (`substRule` (\(Skolem k) -> Variable k)) as) (c >>= \(Skolem k) -> Variable k)
+  return $ generalise t 
+
+  
+schematicsInGoal :: Goal -> [Variable]
+schematicsInGoal (Goal vs ps c) = allSchematics c ++ concatMap (allInRule asSchematic) ps
+
+localise :: Axiom -> LocalRule
+localise = (`substRule` undefined) -- not a placeholder undefined

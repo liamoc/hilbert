@@ -71,11 +71,11 @@ viewTree sks m (PT vs lrs sent ms) = case ms of
   where sent' = viewSentence sent
 
 
-viewSentence :: SentenceSchema -> SentenceView
+viewSentence :: GoalTerm -> SentenceView
 viewSentence (List x)   = ViewList (map viewSentence x)
 viewSentence (Symbol q) = ViewSymbol (toSubscript q)
-viewSentence (Variable v vs) = ViewVariable (toSubscript v) (map toSubscript vs)
-viewSentence (Skolem v ) = ViewSkolem (toSubscript v)
+viewSentence (Variable (Schematic v vs)) = ViewVariable (toSubscript v) (map toSubscript vs)
+viewSentence (Variable (Skolem v )) = ViewSkolem (toSubscript v)
 
 toSubscript :: String -> String 
 toSubscript p@(x:_) | isDigit x = p
