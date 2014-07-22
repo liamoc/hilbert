@@ -75,7 +75,7 @@ toImage :: DisplaySkin -> Model -> DisplayRegion -> Image
 toImage sk ref h = do 
    let (proofModel, w) = (snd . derefLZ *** fromIntegral) ref
        img = displayView sk $ viewModel proofModel
-       img' = displaySideView sk $ sideViewModel proofModel
+       (title, img') = displaySideView sk $ sideViewModel proofModel
        bottomBar = let (ZZ l ((n,_),_) r, _) = ref
                        message = "Hilbert 2.0 " --
                               ++ verticalLine sk : replicate (length l) (unprovenChar sk)
@@ -83,16 +83,17 @@ toImage sk ref h = do
                               ++ verticalLine sk : toSubscript n 
                     in string (defAttr `withStyle` reverseVideo) message 
                    <|> charFill (defAttr `withStyle` reverseVideo) ' ' (fst h - length message) 1 
-    in (centerOnCamera img (second (subtract 1) . first (subtract w) $ h) True
-    <|> charFill defAttr (verticalLine sk) 1 (regionHeight h - 1)
-    <|> centerOnCamera img' (w - 1, snd h - 1) False)
+    in (centerOnCamera img (second (subtract 1) . first (subtract w) $ h) True True
+    <|> (string defAttr [topCornerChar sk] <-> charFill defAttr (verticalLine sk) 1 (regionHeight h - 2))
+    <|> (string defAttr (horizontalLine sk:' ':title ++ " " ++ replicate (w - 4 - length title) (horizontalLine sk))
+         <-> centerOnCamera img' (w - 1, snd h - 2) (rulesPanelCenterRules sk) False))
     <-> bottomBar
 
-centerOnCamera :: Image -> DisplayRegion -> Bool -> Image 
-centerOnCamera img h' lr = let
+centerOnCamera :: Image -> DisplayRegion -> Bool -> Bool -> Image 
+centerOnCamera img h' lr ud = let
   (x,y) = camera img
   y_diff = fromIntegral (regionHeight h') `div` 2 - y
-  shiftUpDown | y_diff > 0  = if lr then (backgroundFill 1 (fromIntegral y_diff) <->) else id
+  shiftUpDown | y_diff > 0  = if ud then (backgroundFill 1 (fromIntegral y_diff) <->) else id
               | y_diff == 0 = id
               | otherwise   = dropImageRows (1 - y_diff)
   x_diff :: Int

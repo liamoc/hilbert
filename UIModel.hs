@@ -35,6 +35,12 @@ data ProofModel = Selected ProofTreeZipper
 instance Show ProofModel where 
   show _ = "get fucked vty"
 
+proofModel :: Model -> ProofModel
+proofModel = snd . derefLZ . fst
+
+getProofTreeZipper :: ProofModel -> ProofTreeZipper 
+getProofTreeZipper (Selected p) = p
+getProofTreeZipper (Tentative _ z) = z
 
 withProofModel :: (ProofModel -> ProofModel) -> Model -> Model
 withProofModel f = first (withLZ (second f) )

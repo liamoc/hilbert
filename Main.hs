@@ -38,6 +38,10 @@ defaultSkin = DS { titleAttr = titleFunc
                  , verticalLine = '│'
                  , unprovenChar = '○'
                  , provenChar = '●'
+                 , topCornerChar = '├'
+                 , horizontalLine = vincOut
+                 , rulesPanelVertPadding = 1
+                 , rulesPanelCenterRules = False
                  , vinculumAttr   = defSentenceAttr
                  , vinculumChar   = \x -> if x then ' ' else vincOut
                  , vinculumCenterChar   = \x -> if x then '⋮' else vincOut

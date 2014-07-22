@@ -19,19 +19,27 @@ data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , verticalLine :: Char
                       , unprovenChar :: Char
                       , provenChar :: Char
+                      , topCornerChar :: Char
+                      , horizontalLine :: Char
                       , displayTopBar :: IsHypothetical -> Bool
                       , premiseLeftAnnot :: ViewMode -> (Attr, String)
                       , premiseRightAnnot :: ViewMode -> (Attr, String)
                       , vincLeftAnnot :: ViewMode -> (Attr, String)
                       , vincRightAnnot :: ViewMode -> (Attr, String)
+                      , rulesPanelVertPadding :: Int
+                      , rulesPanelCenterRules :: Bool 
                       , bgAttr :: Attr
                       , showSchematicDependencies :: Bool
                       }
 
 
-displaySideView :: DisplaySkin -> SideView -> Image
-displaySideView sk (NormalView s) = string (sentenceAttr sk Normal) s
-displaySideView sk (SelectingView ls c rs) = vertCatMid $ intersperse (backgroundFill 1 2) $ map (displayView sk) ls ++ [displayView sk c] ++ map (displayView sk) rs
+displaySideView :: DisplaySkin -> SideView -> (String, Image)
+displaySideView sk (NormalView s) = ("Available Local Facts", vertCatSk sk $ (string defAttr " ":) $ intersperse (backgroundFill 1 $ rulesPanelVertPadding sk)
+                                                                           $ map (displayView sk) s)
+displaySideView sk (SelectingView ls c rs) = ((,) "Compatible Rules") $ vertCatSk sk $ (string defAttr " ":) $  intersperse (backgroundFill 1 $ rulesPanelVertPadding sk) $ rules 
+     where rules = map (displayView sk) ls ++ [displayView sk c] ++ map (displayView sk) rs
+
+vertCatSk sk = if rulesPanelCenterRules sk then vertCatMid else vertCat
 
 displayView :: DisplaySkin -> View -> Image
 displayView sk@(DS {..}) (ViewNode m hyp tks title cs) = let 

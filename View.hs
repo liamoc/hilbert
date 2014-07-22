@@ -41,7 +41,7 @@ instance Monoid Intros where
 data View = ViewNode ViewMode IsHypothetical SentenceView RuleTitle [View]
 
 data SideView = SelectingView [View] View [View]
-              | NormalView String
+              | NormalView [View]
 
 viewLocalRule :: ViewMode -> LocalRule ->  View
 viewLocalRule = viewRule viewSkolemsAndSchematics False
@@ -52,7 +52,7 @@ viewRule f h m  (Rule {..}) = ViewNode m h (viewSentence f' conclusion) (Proven 
 
 sideViewModel :: ProofModel -> SideView 
 sideViewModel (Tentative (ZZ l (c,_) r) _) = SelectingView (reverse $ map (viewLocalRule Speculative . fst) l) (viewLocalRule Selection c) (map (viewLocalRule Speculative .fst) r)
-sideViewModel _ = NormalView "Information"
+sideViewModel (Selected c) = NormalView $ map (viewLocalRule Normal) $ localRules c
 
 viewModel :: ProofModel -> View
 viewModel (Selected p) = viewZipper Selection p
