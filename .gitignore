@@ -1,2 +1,4 @@
 /dist/
 ltxpng
+cabal.sandbox.config
+.cabal-sandbox
