@@ -10,3 +10,8 @@ axiom
 prove schematic ?r
  --------------------------------------- Foo1
  (S (S (S (S Z)))) + (S (S (S (S Z)))) = ?r
+
+prove
+ [P: (Blue + (S Z) = Z) ]
+ ------------------------ Bar
+ (S Blue) + (S Z) = (S Z)
