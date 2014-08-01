@@ -6,6 +6,7 @@ import Graphics.Vty
 import Data.List 
 import Graphics.Vty.Prelude
 import Control.Arrow
+import Data.Char
 
 data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , sentenceAttr :: ViewMode -> Attr
@@ -33,12 +34,14 @@ data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , rulesPanelCenterRules :: Bool 
                       , bgAttr :: Attr
                       , showSchematicDependencies :: Bool
+                      , subscripts :: [Char] -- length == 10 chars.
                       }
 
 
 displayBar :: DisplaySkin -> BarView -> String 
 displayBar sk x = intersperse (Str $ " " ++ verticalLine sk : " ") x >>= displaySegment
    where displaySegment (Str s) = s
+         displaySegment (RuleNameStr s) = toSubscript sk s
          displaySegment (Bullets l r) = replicate l (unprovenChar sk)
                                      ++ [provenChar sk]
                                      ++ replicate r (unprovenChar sk)
@@ -61,6 +64,7 @@ displaySideView sk (NormalView s) = ("Available Local Facts", vertCatSk sk $ (st
 displaySideView sk (SelectingView ls c rs) = ((,) "Compatible Rules") $ vertCatSk sk $ (string defAttr " ":) $  intersperse (backgroundFill 1 $ rulesPanelVertPadding sk) $ rules 
      where rules = map (displayView sk) ls ++ [displayView sk c] ++ map (displayView sk) rs
 
+vertCatSk :: DisplaySkin -> [Image] -> Image
 vertCatSk sk = if rulesPanelCenterRules sk then vertCatMid else vertCat
 
 displayView :: DisplaySkin -> View -> Image
@@ -108,8 +112,14 @@ vertCatMid = vertCat . uniform'
 
 displayViewTitle :: DisplaySkin -> RuleTitle -> ViewMode -> Image
 displayViewTitle _ NoRule _ = emptyImage
-displayViewTitle (DS {..}) (Proven s (I sk rs)) m = string (titleAttr True m)  s <|> string (sentenceAttr m) " " <|> horizCat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m)) sk ++ map (string (ruleIntroAttr m)) rs) 
-displayViewTitle (DS {..}) (Unproven s (I sk rs)) m = string (titleAttr False m) s <|> string (sentenceAttr m) " " <|> horizCat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m)) sk ++ map (string (ruleIntroAttr m)) rs) 
+displayViewTitle ds@(DS {..}) (Proven s (I sk rs)) m = string (titleAttr True m) (toSubscript ds s) 
+                                                   <|> string (sentenceAttr m) " " 
+                                                   <|> horizCat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m) . toSubscript ds ) sk 
+                                                                                                          ++ map (string (ruleIntroAttr m) . toSubscript ds) rs) 
+displayViewTitle ds@(DS {..}) (Unproven s (I sk rs)) m = string (titleAttr False m) (toSubscript ds s) 
+                                                    <|> string (sentenceAttr m) " "
+                                                    <|> horizCat (intersperse (string (sentenceAttr m) " ") $ map (string (skolemIntroAttr m) . toSubscript ds) sk 
+                                                                                                           ++ map (string (ruleIntroAttr m) . toSubscript ds) rs) 
 
 
 displayViewSchema :: DisplaySkin -> ViewMode -> SentenceView -> Image
@@ -119,11 +129,18 @@ displayViewSchema' :: DisplaySkin -> ViewMode -> SentenceView -> Image
 displayViewSchema' sk@(DS {..}) m (ViewList ss) = string (sentenceAttr m) "(" 
                                               <|> displayViewSchema sk m (ViewList ss)
                                               <|> string (sentenceAttr m) ")"
-displayViewSchema' (DS {..}) m (ViewVariable s ds) 
+displayViewSchema' sk@(DS {..}) m (ViewVariable s ds) 
     | showSchematicDependencies && not (null ds) = displayViewSchema' DS {showSchematicDependencies = False, ..} m (ViewList (ViewVariable s []: map ViewSkolem ds))
-    | otherwise =  string (variableAttr m) s 
-displayViewSchema' (DS {..}) m (ViewSkolem s) = string (skolemAttr m) s 
-displayViewSchema' (DS {..}) m (ViewRuleVar s) = string (ruleVarAttr m) s 
-displayViewSchema' (DS {..}) m (ViewSymbol s) = string (sentenceAttr m) s 
+    | otherwise =  string (variableAttr m) (toSubscript sk s) 
+displayViewSchema' ds@(DS {..}) m (ViewSkolem s) = string (skolemAttr m) (toSubscript ds s) 
+displayViewSchema' ds@(DS {..}) m (ViewRuleVar s) = string (ruleVarAttr m) (toSubscript ds s) 
+displayViewSchema' ds@(DS {..}) m (ViewSymbol s) = string (sentenceAttr m) (toSubscript ds s) 
+
                                               
 
+toSubscript :: DisplaySkin -> String -> String 
+toSubscript _  p@(x:_) | isDigit x = p
+toSubscript sk k = unwords . map (map sub) . words $ k
+    where sub i | isDigit i = subscripts sk !! (ord i - ord '0')
+                | otherwise = i
+     

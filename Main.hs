@@ -61,6 +61,57 @@ mvcViewController sk = join $ MVC.managed $ \k -> do
 mvcApp :: DisplaySkin -> Model -> IO Model
 mvcApp sk m = MVC.runMVC m mvcModel (mvcViewController sk)
 
+
+
+asciiSkin :: DisplaySkin
+asciiSkin = DS { titleAttr = titleFunc
+               , sentenceAttr  = defSentenceAttr
+               , variableAttr = const $ Attr (SetTo bold) (SetTo brightGreen) Default
+               , skolemAttr = const $ Attr Default (SetTo brightMagenta) Default
+               , skolemIntroAttr = const $ Attr Default (SetTo brightMagenta) Default
+               , ruleVarAttr = const $ Attr Default (SetTo brightCyan) Default
+               , ruleIntroAttr = const $ Attr Default (SetTo brightBlue) Default
+               , separatePremises = emptyImage 
+               , vinculumPadding = 0
+               , verticalLine = '|'
+               , unprovenChar = '-'
+               , provenChar = 'O'
+               , topCornerChar = '+'
+               , horizontalLine = '-'
+               , rulesPanelVertPadding = 1
+               , rulesPanelCenterRules = False
+               , vinculumAttr   = defSentenceAttr
+               , vinculumChar   = \x -> if x then ' ' else '-'
+               , vinculumCenterChar   = \x -> if x then '~' else '-'
+               , displayTopBar = not
+               , showSchematicDependencies = True
+               , premiseLeftAnnot = onlyInSelL' ( defAttr {attrForeColor=SetTo brightYellow},"<")
+               , premiseRightAnnot = onlyInSelR' ( defAttr {attrForeColor=SetTo brightYellow}, ">")
+               , vincLeftAnnot = onlyInSelL ( defAttr {attrForeColor = SetTo brightGreen}, "<")
+               , vincRightAnnot = onlyInSelR ( defAttr {attrForeColor = SetTo brightGreen}, ">")
+               , bgAttr =  defAttr
+               , subscripts = "0123456789"
+               }
+  where defSentenceAttr x= case x of 
+                            Normal -> defAttr
+                            Speculative -> Attr (SetTo bold) (SetTo brightBlack) Default
+                            Selection   -> Attr Default (SetTo brightYellow) Default
+                            Selecting {} -> Attr Default (SetTo brightGreen) Default
+        onlyInSelL x (Selecting {isPrevRule = True}) = x
+        onlyInSelL _ _ = (defAttr, "")
+        onlyInSelR x (Selecting {isNextRule = True}) = x
+        onlyInSelR _ _ = (defAttr, "")
+        onlyInSelL' x (Selecting {isPrevAssign = True}) = x
+        onlyInSelL' _ _ = (defAttr, "")
+        onlyInSelR' x  (Selecting {isNextAssign = True}) = x
+        onlyInSelR' _ _ = (defAttr, "")
+        titleFunc _ (Selecting {}) = Attr (SetTo reverseVideo) (SetTo brightGreen) Default
+        titleFunc _ (Selection   ) = Attr (SetTo reverseVideo) (SetTo brightYellow) Default
+        titleFunc True _ = Attr (SetTo bold) (SetTo brightBlue) Default 
+        titleFunc False _ = Attr (SetTo bold) (SetTo brightRed) Default  
+
+
+
 defaultSkin :: DisplaySkin
 defaultSkin = DS { titleAttr = titleFunc
                  , sentenceAttr  = defSentenceAttr
@@ -88,6 +139,7 @@ defaultSkin = DS { titleAttr = titleFunc
                  , vincLeftAnnot = onlyInSelL ( defAttr {attrForeColor = SetTo brightGreen}, "←")
                  , vincRightAnnot = onlyInSelR ( defAttr {attrForeColor = SetTo brightGreen}, "→")
                  , bgAttr =  defAttr
+                 , subscripts = "₀₁₂₃₄₅₆₇₈₉"
                  }
   where defSentenceAttr x= case x of 
                             Normal -> defAttr
