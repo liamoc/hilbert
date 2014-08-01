@@ -43,6 +43,20 @@ data View = ViewNode ViewMode IsHypothetical SentenceView RuleTitle [View]
 data SideView = SelectingView [View] View [View]
               | NormalView [View]
 
+data BarSection = Str String | Bullets Int Int
+
+type BarView = [BarSection]
+
+type ScreenView = (View, SideView, BarView, Int)
+
+viewModel :: Model -> ScreenView
+viewModel m@(ZZ _ ((_,_),pm) _, w) = (viewProofModel pm, sideViewProofModel pm, barViewModel m, w)
+
+barViewModel :: Model -> BarView 
+barViewModel (ZZ l ((n,_),_) r,_) = [ Str "Hilbert 2.0"
+                                    , Bullets (length l) (length r)
+                                    , Str $ toSubscript n
+                                    ]
 viewLocalRule :: ViewMode -> LocalRule ->  View
 viewLocalRule = viewRule viewSkolemsAndSchematics False
 
@@ -50,22 +64,22 @@ viewRule :: (a -> SentenceView) -> IsHypothetical -> ViewMode -> Rule a -> View
 viewRule f h m  (Rule {..}) = ViewNode m h (viewSentence f' conclusion) (Proven name (I [] []))  (map (viewRule f' (not h) (downwards m)) premises)
   where f' = either (ViewRuleVar . (binders `at`)) f
 
-sideViewModel :: ProofModel -> SideView 
-sideViewModel (Tentative (ZZ l (c,_) r) _) = SelectingView (reverse $ map (viewLocalRule Speculative . fst) l) (viewLocalRule Selection c) (map (viewLocalRule Speculative .fst) r)
-sideViewModel (Selected c) = NormalView $ map (viewLocalRule Normal) $ localRules c
+sideViewProofModel :: ProofModel -> SideView 
+sideViewProofModel (Tentative (ZZ l (c,_) r) _) = SelectingView (reverse $ map (viewLocalRule Speculative . fst) l) (viewLocalRule Selection c) (map (viewLocalRule Speculative .fst) r)
+sideViewProofModel (Selected c) = NormalView $ map (viewLocalRule Normal) $ localRules c
 
-viewModel :: ProofModel -> View
-viewModel (Selected p) = viewZipper Selection p
-viewModel (Tentative (ZZ l (_, ZZ ul m ur) r) _) = viewZipper (Selecting (not $ null r)
-                                                                         (not $ null l)
-                                                                         (not $ null ur)
-                                                                         (not $ null ul)
-                                                              ) m
+viewProofModel :: ProofModel -> View
+viewProofModel (Selected p) = viewZipper Selection p
+viewProofModel (Tentative (ZZ l (_, ZZ ul m ur) r) _) = viewZipper (Selecting (not $ null r)
+                                                                              (not $ null l)
+                                                                              (not $ null ur)
+                                                                              (not $ null ul)
+                                                                   ) m
 
 
 viewZipper :: ViewMode -> ProofTreeZipper -> View
-viewZipper m (PTZ fv [] pt) = fst $ fst $ viewTree [] m pt
-viewZipper m (PTZ fv ctx p) = fst $ fst $ viewZipper' Normal ctx $ viewTree (concatMap skolemsC ctx) m p
+viewZipper m (PTZ _ [] pt) = fst $ fst $ viewTree [] m pt
+viewZipper m (PTZ _ ctx p) = fst $ fst $ viewZipper' Normal ctx $ viewTree (concatMap skolemsC ctx) m p
   where viewZipper' m (PTC (sks, lrs, str, name) l r : ctx) acc 
            = let str' = viewSentence viewSkolemsAndSchematics str
                  [l', r'] = map (map (viewTree (concatMap skolemsC ctx ++ sks) m)) [reverse l, r]
@@ -92,7 +106,7 @@ viewSkolemsAndSchematics (Skolem v)       = ViewSkolem (toSubscript v)
 
 viewSentence :: (a -> SentenceView) -> Term a -> SentenceView
 viewSentence f (List x)   = ViewList (map (viewSentence f) x)
-viewSentence f (Symbol q) = ViewSymbol (toSubscript q)
+viewSentence _ (Symbol q) = ViewSymbol (toSubscript q)
 viewSentence f (Variable v) = f v
 
 toSubscript :: String -> String 

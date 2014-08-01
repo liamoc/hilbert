@@ -4,26 +4,62 @@
 module Main where
 
 
-import           Control.Applicative            hiding ((<|>))
-import           Control.Concurrent
+import           Control.Applicative
+import           Control.Monad
+import           Control.Monad.Trans.State.Strict
+import           Data.Default
 import           Data.Maybe
-import           Data.Monoid
-import qualified Data.Text                      as T
-import           Graphics.Vty
-import           Graphics.Vty.Image
+import           Display
+import           Graphics.Vty hiding ((<|>))
+import qualified MVC
+import qualified MVC.Prelude as MVC
+import           Parser
+import           Pipes hiding (next)
+import qualified Pipes.Prelude as Pipes
 import           System.Environment
-import Display
-import Parser
-import TreeWidget
-import UIModel
-import View
-import Data.Default
+import           UIModel
+import           View
 
-vincOut :: Char
-vincOut = '─'
-leftArrow, rightArrow :: String
-leftArrow = "←"
-rightArrow = "→"
+defaultKeyBindings :: [(Event, Model -> Model)]
+defaultKeyBindings = [ (EvKey (KChar 'w') [], forward)
+                     , (EvKey (KChar 'd') [], prev)
+                     , (EvKey (KChar 's') [], back)
+                     , (EvKey (KChar 'a') [], next)
+                     , (EvKey (KChar 'z') [], clearSubtree)
+                     , (EvKey (KChar 'r') [], rulemode)
+                     , (EvKey (KChar 'q') [], nextVariant)
+                     , (EvKey (KChar 'e') [], prevVariant)
+                     , (EvKey (KChar '<') [], nextLemma)
+                     , (EvKey (KChar '>') [], prevLemma)
+                     , (EvKey (KChar '+') [], decreasePane)
+                     , (EvKey (KChar '-') [], increasePane)
+                     ]
+
+
+mvcModel :: MVC.Model Model Event ScreenView 
+mvcModel = MVC.asPipe $ Pipes.takeWhile (/= (EvKey (KChar 'x') [])) >-> MVC.loop mvcModel'
+  where mvcModel' :: Event -> Pipes.ListT (State Model) ScreenView
+        mvcModel' e = do Just a <- return $ lookup e defaultKeyBindings 
+                         lift (modify a >> viewModel <$> get)
+                  <|> do EvResize {} <- return e
+                         lift (viewModel <$> get)
+
+mvcViewController :: DisplaySkin -> MVC.Managed (MVC.View ScreenView, MVC.Controller Event)
+mvcViewController sk = join $ MVC.managed $ \k -> do
+     Vty {..} <- mkVty def
+     let mvcView :: MVC.View ScreenView
+         mvcView = MVC.asSink $ \v -> do
+           displayBounds outputIface >>= update . picForImage . displayScreenView sk v 
+     x <- k $ do
+         mvcController <- do MVC.producer MVC.Single ( do (x,y) <- Pipes.lift (displayBounds outputIface)
+                                                          Pipes.yield (EvResize x y)
+                                                          MVC.lift nextEvent >~ MVC.cat)
+         return (mvcView, mvcController)
+     shutdown
+     return x
+
+mvcApp :: DisplaySkin -> Model -> IO Model
+mvcApp sk m = MVC.runMVC m mvcModel (mvcViewController sk)
 
 defaultSkin :: DisplaySkin
 defaultSkin = DS { titleAttr = titleFunc
@@ -39,22 +75,18 @@ defaultSkin = DS { titleAttr = titleFunc
                  , unprovenChar = '○'
                  , provenChar = '●'
                  , topCornerChar = '├'
-                 , horizontalLine = vincOut
+                 , horizontalLine = '─'
                  , rulesPanelVertPadding = 1
                  , rulesPanelCenterRules = False
                  , vinculumAttr   = defSentenceAttr
-                 , vinculumChar   = \x -> if x then ' ' else vincOut
-                 , vinculumCenterChar   = \x -> if x then '⋮' else vincOut
+                 , vinculumChar   = \x -> if x then ' ' else '─'
+                 , vinculumCenterChar   = \x -> if x then '⋮' else '─'
                  , displayTopBar = not
                  , showSchematicDependencies = True
-                 , premiseLeftAnnot = onlyInSelL' ( defAttr {attrForeColor=SetTo brightYellow} 
-                                                  , leftArrow)
-                 , premiseRightAnnot = onlyInSelR' ( defAttr {attrForeColor=SetTo brightYellow} 
-                                                   , rightArrow)
-                 , vincLeftAnnot = onlyInSelL ( defAttr {attrForeColor = SetTo brightGreen} 
-                                              , leftArrow)
-                 , vincRightAnnot = onlyInSelR ( defAttr {attrForeColor = SetTo brightGreen} 
-                                               , rightArrow)
+                 , premiseLeftAnnot = onlyInSelL' ( defAttr {attrForeColor=SetTo brightYellow},"←")
+                 , premiseRightAnnot = onlyInSelR' ( defAttr {attrForeColor=SetTo brightYellow}, "→")
+                 , vincLeftAnnot = onlyInSelL ( defAttr {attrForeColor = SetTo brightGreen}, "←")
+                 , vincRightAnnot = onlyInSelR ( defAttr {attrForeColor = SetTo brightGreen}, "→")
                  , bgAttr =  defAttr
                  }
   where defSentenceAttr x= case x of 
@@ -75,47 +107,13 @@ defaultSkin = DS { titleAttr = titleFunc
         titleFunc True _ = Attr (SetTo bold) (SetTo brightBlue) Default 
         titleFunc False _ = Attr (SetTo bold) (SetTo brightRed) Default  
 
-defaultKeyBindings :: KeyBindings
-defaultKeyBindings = [(KChar 'w', MoveForward)
-                     ,(KChar 'd', MovePrev)
-                     ,(KChar 's', MoveBack)
-                     ,(KChar 'a', MoveNext)
-                     ,(KChar 'z', ClearSubtree)
-                     ,(KChar 'r', EnterRulesMode)
-                     ,(KChar 'q', NextAssignment)
-                     ,(KChar 'e', PrevAssignment)
-                     ,(KChar '<', NextLemma)
-                     ,(KChar '>', PrevLemma)
-                     ,(KChar '+', DecreasePane)
-                     ,(KChar '-', IncreasePane)
-                     ,(KChar 'f', SubstituteVars)
-                     ]
-
 
 main :: IO ()
 main = do
-  x <- getArgs
-  if null x then 
-    putStrLn "No rules files given"
-  else do
-    rules' <- parse $ head x
-    if isNothing rules' then
-      putStrLn "Errors found in rules definition."
-    else do
-      let Just rules = rules'
-          Just m =  newModel rules 
-      Vty {..} <- mkVty def
-      let redraw m' =  displayBounds outputIface >>= update . picForImage . toImage defaultSkin m'
-          eventLoop m' = nextEvent >>= \case 
-            EvKey (KChar 'x') _  -> shutdown
-            EvKey (KChar k)   _  -> case lookup (KChar k) defaultKeyBindings of 
-                                      Just f -> let m'' = keyActionToOp f m' in redraw m'' >> eventLoop m''
-                                      Nothing -> eventLoop m'
-            EvResize {} -> redraw m' >> eventLoop m'
-            _ -> eventLoop m'
-      redraw m
-      eventLoop m
-       
-  
+  getArgs >>= \case
+    [] -> putStrLn "No rules files given"
+    x:_ -> parse x >>= \case 
+      Nothing -> return ()
+      Just rules' -> void $ mvcApp defaultSkin $ fromJust $ newModel rules'
+      
 
-     -- let proc' text = setText txt (T.pack $ "Hilbert 2.0 │ " ++ text)

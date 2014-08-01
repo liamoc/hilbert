@@ -6,8 +6,10 @@ import Rules
 import Data.Maybe
 import Control.Arrow (first, second)
 
-data ListZipper a = ZZ [a] a [a] deriving Show
+       
 
+
+data ListZipper a = ZZ [a] a [a] deriving Show
 
 leftLZ :: ListZipper a -> ListZipper a
 leftLZ (ZZ ls m (r:rs)) = ZZ (m:ls) r rs
@@ -26,15 +28,14 @@ withLZ f (ZZ l m r) = ZZ l (f m) r
 toLZ :: [a] -> Maybe (ListZipper a)
 toLZ [] = Nothing
 toLZ (x:xs) = Just $ ZZ [] x xs
+
 type SidebarWidth = Int
+
 type Model = (ListZipper ((RuleName, [Axiom]) , ProofModel) , SidebarWidth)
 
 data ProofModel = Selected ProofTreeZipper
                 | Tentative (ListZipper (LocalRule , ListZipper ProofTreeZipper)) ProofTreeZipper
      
-instance Show ProofModel where 
-  show _ = "get fucked vty"
-
 proofModel :: Model -> ProofModel
 proofModel = snd . derefLZ . fst
 
@@ -45,7 +46,7 @@ getProofTreeZipper (Tentative _ z) = z
 withProofModel :: (ProofModel -> ProofModel) -> Model -> Model
 withProofModel f = first (withLZ (second f) )
 
-next, prev, nextLemma, prevLemma, forward, back, prevVariant, nextVariant,clearSubtree, rulemode :: Model -> Model
+next, prev, nextLemma, prevLemma, forward, back, prevVariant, nextVariant,clearSubtree, rulemode, decreasePane, increasePane :: Model -> Model
 next         = withProofModel nextP
 prev         = withProofModel prevP
 forward      = withProofModel forwardP
@@ -53,6 +54,8 @@ back         = withProofModel backP
 nextVariant  = withProofModel nextVariantP
 prevVariant  = withProofModel prevVariantP
 clearSubtree = withProofModel clearSubtreeP
+decreasePane = second (max 0 . subtract 1)
+increasePane = second (min 70 . succ)
 
 sentence :: Model -> GoalTerm
 sentence = sentenceP . snd . derefLZ . fst

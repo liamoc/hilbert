@@ -1,8 +1,11 @@
 {-# LANGUAGE RecordWildCards #-}
 module Display where
 import View
+import VtyCamera
 import Graphics.Vty
 import Data.List 
+import Graphics.Vty.Prelude
+import Control.Arrow
 
 data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , sentenceAttr :: ViewMode -> Attr
@@ -32,6 +35,25 @@ data DisplaySkin = DS { titleAttr :: Bool -> ViewMode -> Attr
                       , showSchematicDependencies :: Bool
                       }
 
+
+displayBar :: DisplaySkin -> BarView -> String 
+displayBar sk x = intersperse (Str $ " " ++ verticalLine sk : " ") x >>= displaySegment
+   where displaySegment (Str s) = s
+         displaySegment (Bullets l r) = replicate l (unprovenChar sk)
+                                     ++ [provenChar sk]
+                                     ++ replicate r (unprovenChar sk)
+
+displayScreenView :: DisplaySkin -> ScreenView -> DisplayRegion -> Image
+displayScreenView sk (v, sv, message, w) h = 
+   let img = displayView sk v
+       (title, img') = displaySideView sk sv
+       bottomBar = string (defAttr `withStyle` reverseVideo) (displayBar sk message)
+                <|> charFill (defAttr `withStyle` reverseVideo) ' ' (fst h - length message) 1 
+    in (centerOnCamera img (second (subtract 1) . first (subtract w) $ h) True True
+    <|> (string defAttr [topCornerChar sk] <-> charFill defAttr (verticalLine sk) 1 (regionHeight h - 2))
+    <|> (string defAttr (horizontalLine sk:' ':title ++ " " ++ replicate (w - 4 - length title) (horizontalLine sk))
+         <-> centerOnCamera img' (w - 1, snd h - 2) (rulesPanelCenterRules sk) False))
+    <-> bottomBar
 
 displaySideView :: DisplaySkin -> SideView -> (String, Image)
 displaySideView sk (NormalView s) = ("Available Local Facts", vertCatSk sk $ (string defAttr " ":) $ intersperse (backgroundFill 1 $ rulesPanelVertPadding sk)
@@ -105,5 +127,3 @@ displayViewSchema' (DS {..}) m (ViewRuleVar s) = string (ruleVarAttr m) s
 displayViewSchema' (DS {..}) m (ViewSymbol s) = string (sentenceAttr m) s 
                                               
 
-invisibleQ :: Image
-invisibleQ = char (defAttr {attrStyle = SetTo 0x80}) ' '
